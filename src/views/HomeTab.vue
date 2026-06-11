@@ -81,7 +81,7 @@
           <ion-button
             @click="
               openTab(
-                `${selectedNetwork.explorer}/address/${selectedAccount?.address}`.replace(
+                `${selectedNetwork.explorer}/${isCanton ? 'party/' + selectedAccount?.cantonParty : 'address/' + selectedAccount?.address}`.replace(
                   '//',
                   '/'
                 )
@@ -169,7 +169,7 @@
       >
         <p class="blink-loading">Loading RPC pefromance...</p>
       </ion-item>
-
+<!-- 
       <ion-item style="margin-top: 0.3rem; margin-bottom: 0.3rem; text-align: center">
         <ion-button
           @click="goToFarcasterActions"
@@ -177,7 +177,7 @@
           style="margin: auto; width: 98%; font-size: 0.8rem; padding: 0.6rem"
           >Farcaster Wallet Actions</ion-button
         >
-      </ion-item>
+      </ion-item> -->
 
       <ion-item style="margin-top: 0.3rem; margin-bottom: 0.3rem; text-align: center">
         <ion-button
@@ -187,7 +187,7 @@
           >Personal Sign Messages</ion-button
         >
       </ion-item>
-      <ion-item style="margin-top: 0.3rem">
+      <!-- <ion-item style="margin-top: 0.3rem">
         <div class="display: flex; flex-direction: column">
           <img
             alt="stealthex"
@@ -201,7 +201,7 @@
             This button does not contain any referral to maximize privacy.
           </p>
         </div>
-      </ion-item>
+      </ion-item> -->
       <ion-loading
         :is-open="loading"
         cssClass="my-custom-class"
@@ -373,7 +373,7 @@ const selectedNetwork = (ref(null) as unknown) as Ref<Network>;
 const toastState = ref(false);
 const settings = ref({}) as Ref<Awaited<ReturnType<typeof getSettings>>>;
 const rpcPerformance = ref({ performance: 0 }) as Ref<{ performance: number }>;
-
+const isCanton = ref(false)
 const networkSearchBar = ref<InstanceType<typeof IonSearchbar> | null>(null);
 
 const getToastRef = () => toastState;
@@ -407,8 +407,12 @@ const loadData = () => {
       filtredNetworks.value = res[1];
       selectedAccount.value = res[2];
       selectedNetwork.value = res[3];
+      
       settings.value = res[4];
       loading.value = false;
+      if(selectedNetwork.value.chainId === 31337){
+        isCanton.value = true
+      }
     }
   );
 
@@ -443,6 +447,9 @@ const changeSelectedNetwork = async (chainId: number) => {
       Object.assign({ [chainId]: networks.value[chainId] }, networks.value)
     );
     selectedNetwork.value = networks.value[chainId];
+    if(selectedNetwork.value.chainId === 31337){
+      isCanton.value = true
+    }
     triggerListener("chainChanged", numToHexStr(chainId));
   }
 

@@ -70,6 +70,7 @@
         >
       </ion-item>
       <ion-item> Contract: {{ contract }} </ion-item>
+      <ion-item v-if="memo"> Memo: {{ memo}} </ion-item>
       <ion-item>
         Tx Total Cost: {{ totalCost }}
         <span
@@ -260,6 +261,7 @@ const alertOpen = ref(false);
 const alertMsg = ref("");
 const loading = ref(true);
 const contract = params.to;
+const memo = params.memo
 const gasPrice = ref(0);
 const gasLimit = ref(0);
 const totalCost = ref(0);

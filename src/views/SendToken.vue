@@ -83,6 +83,19 @@
             </ion-button>
           </ion-item>
 
+          <ion-item v-if="isCanton">
+            <ion-label>Memo  (Optional)</ion-label>
+          </ion-item>
+
+          <ion-item v-if="isCanton">
+            <ion-input
+              aria-label="memo"
+              style="font-size: 0.8rem"
+              id="memo"
+              v-model="memo"
+            ></ion-input>
+          </ion-item>
+
           <ion-item>
             <ion-label>Amount (e.g. 1.2):</ion-label>
           </ion-item>
@@ -270,8 +283,11 @@ import { getTxCount, getBalance, getCurrentProvider } from "@/utils/wallet";
 import ContactsSelect from "./ContactsSelect.vue";
 import { ERC20_PARTIAL_ABI } from "@/utils/abis";
 import { wait } from "@/utils/misc";
+import { isCantonAddress } from "@/utils/canton";
 
 const sendTo = ref("");
+const memo = ref("")
+const isCanton = ref(false)
 const alertOpen = ref(false);
 const alertMsg = ref("");
 const alertTitle = ref("Error");
@@ -298,6 +314,12 @@ onIonViewWillEnter(async () => {
     if (!selectedNetwork.value || !selectedAccount.value) {
       loading.value = false;
       return;
+    }
+
+    if(selectedNetwork.value.chainId === 31337){
+      isCanton.value = true
+    }else{
+      isCanton.value = false
     }
 
     const balanceRace = [getBalance(), new Promise((r) => wait(5000).then(() => r(-1)))];
@@ -349,7 +371,7 @@ const promptTransaction = async () => {
     return;
   }
 
-  if (!isAddress(sendTo.value)) {
+  if (!isAddress(sendTo.value) && !isCantonAddress(sendTo.value)) {
     alertOpen.value = true;
     alertMsg.value = "Invalid send address";
     return;
@@ -377,6 +399,7 @@ const promptTransaction = async () => {
   const tx = {
     from: selectedAccount.value.address,
     to: sendTo.value,
+    memo: memo.value,
     value,
     nonce,
     gasLimit: "0x0",

@@ -717,8 +717,9 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                         try {
                             const network = await getSelectedNetwork()
 
+                            const isCanton = network.chainId === 31337
                             let tx
-                            if(network.chainId === 31337){
+                            if(isCanton){
                                 //submit prepare, execute canton flow
                                 tx = await sendCantonTransaction({...params})
 
@@ -726,6 +727,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                             tx = await sendTransaction({ ...params, ...(rIdData?.[String(gWin?.id ?? 0)] ?? {}) })
                             
                             }
+                        
                             if(tx){
                             sendResponse(tx.hash)
                             const buttons = {} as any
@@ -733,12 +735,12 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                                 date: Date.now(),
                                 txHash: tx.hash,
                                 chainId: network.chainId,
-                                ...(network.explorer ? { txUrl: `${network.explorer}/tx/${tx.hash}`.replace('//', '/') } : {}),
+                                ...(network.explorer ? { txUrl: `${network.explorer}/${isCanton ? 'updates' : 'tx'}/${tx.hash.replace('//', '/')}` } : {}),
                                 webiste: (message?.website)
                             })
                             const notificationId = crypto.randomUUID()
                             if (network?.explorer) {
-                                notificationUrl = `${network.explorer}/tx/${tx.hash}`.replace('//', '/')
+                                notificationUrl = `${network.explorer}/${isCanton ? 'updates' : 'tx'}/${tx.hash}`.replace('//', '/')
                                 buttons.buttons = [{
                                     title: 'View Transaction',
                                 }]
