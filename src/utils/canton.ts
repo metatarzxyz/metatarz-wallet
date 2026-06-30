@@ -50,7 +50,10 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
     const signature = await signMsgWithPk(message, pk ? pk : account?.pk)
 
 
-    const prepareResponse = await callPrepare(url, { message, sig: signature, ...(type === 'transfer' ? { to: params?.to, amount: params?.value, token: "Amulet", memo: params?.memo } : {}), type })
+    const prepareResponse = await callPrepare(url, { message, sig: signature, ...(type === 'transfer' ? { to: params?.to, amount: params?.value, 
+        //token: params?.token,
+        token: "Amulet", // TODO: replace
+        memo: params?.memo } : {}), type })
 
 
     const txHash = prepareResponse?.transaction_hash
@@ -104,7 +107,7 @@ export const registerWallet = async (pk: string) => {
 
         const signature = await signMsgWithPk(msg, pk)
 
-        const data: { user_exists: boolean, party: string, fingerprint: string, topology_hash: string, public_key_fingerprint: string, registration_token: string }
+        const data: { user_exists: boolean, party: string, fingerprint: string, topology_hash: string, public_key_fingerprint: string, registration_token: string, error: string, code:  number}
             = await callRegisterTopology(url, {
                 signature,
                 message: msg,
@@ -112,6 +115,12 @@ export const registerWallet = async (pk: string) => {
                 canton_public_key: publicKey
             })
         //fetch /register/prepare-topology
+
+        if(data && data?.error && data?.code==403){
+            return {
+                error: data?.error
+            }
+        }
 
         if (data?.user_exists) {
             return {
@@ -172,6 +181,7 @@ async function callRegister(url: string, params: any) {
             return
         }
     }
+    
 
     return await response.json();
 }
@@ -234,8 +244,13 @@ async function callRegisterTopology(url: string, params: any) {
 
     if (!response.ok) {
         console.error(`HTTP error! status: ${response.status}`);
-        return
+
+        //user not whitelisted
+        if(response.status !== 403){
+            return
+        }
     }
+    
 
     return await response.json();
 }

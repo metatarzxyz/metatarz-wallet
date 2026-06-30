@@ -1,4 +1,4 @@
-# ![CLW LOGO](/public/assets/extension-icon/wallet_16.png?raw=true "CLW LOGO") Clear EVM wallet
+# ![CLW LOGO](/public/assets/extension-icon/wallet_16.png?raw=true "CLW LOGO") Metatarz EVM wallet
 
 ## Description
 
@@ -6,7 +6,7 @@ This is an open source, NON-KYC, privacy-focused, EVM wallet browser extension i
 
 ATM, it also includes some Farcaster-related features.
 
-For more info, you can check [docs website](https://clear-wallet.flashsoft.eu)
+For more info, you can check [docs website](https://metatarz-wallet.flashsoft.eu)
 
 ![Featured on Alchemy](/repo_res/alchemy.png?raw=true "Featured on Alchemy")
 
@@ -15,8 +15,8 @@ For more info, you can check [docs website](https://clear-wallet.flashsoft.eu)
 ## How to Build from Github
 
 ```bash
-git clone https://github.com/andrei0x309/clear-wallet.git
-cd clear-wallet
+git clone https://github.com/andrei0x309/metatarz-wallet.git
+cd metatarz-wallet
 bun install
 bun run build # will build extension with chromium manifest
 bun run build-firefox # will build extension with firefox manifest
@@ -53,7 +53,7 @@ bun run build # will build extension with chromium manifest
 bun run build-firefox # will build extension with firefox manifest
 ```
 
-<!-- [![Clear EVM Wallet (CLW) - Open source EVM wallet that implements meta mask API. | Product Hunt](https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=381026&theme=dark)](https://www.producthunt.com/posts/clear-evm-wallet-clw?utm_source=badge-featured&utm_medium=badge&utm_souce=badge-clear-evm-wallet-clw) -->
+<!-- [![Metatarz EVM Wallet (CLW) - Open source EVM wallet that implements meta mask API. | Product Hunt](https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=381026&theme=dark)](https://www.producthunt.com/posts/metatarz-evm-wallet-clw?utm_source=badge-featured&utm_medium=badge&utm_souce=badge-metatarz-evm-wallet-clw) -->
 
 ### Badges
 

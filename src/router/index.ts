@@ -94,8 +94,8 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@/views/SendToken.vue'),
       },
       {
-        path: 'read-contract',
-        component: () => import('@/views/ReadContract.vue'),
+        path: 'deposit-token',
+        component: () => import('@/views/DepositToken.vue'),
       },
       {
         path: 'write-contract',

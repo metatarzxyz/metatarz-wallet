@@ -17,12 +17,15 @@
           <ion-label>Native</ion-label>
         </ion-segment-button>
         <ion-segment-button value="erc20">
-          <ion-label>ERC20</ion-label>
+          <ion-label>{{ isCanton ? "CIP-56" : "ERC20" }}</ion-label>
         </ion-segment-button>
       </ion-segment>
       <template v-if="!selectedAccount || !selectedNetwork">
         <ion-item>
-          <ion-label>Please select an account and network first to send tokens</ion-label>
+          <ion-label
+            >Please select an account and network first to send
+            tokens</ion-label
+          >
         </ion-item>
       </template>
       <template v-else>
@@ -84,7 +87,7 @@
           </ion-item>
 
           <ion-item v-if="isCanton">
-            <ion-label>Memo  (Optional)</ion-label>
+            <ion-label>Memo (Optional)</ion-label>
           </ion-item>
 
           <ion-item v-if="isCanton">
@@ -110,14 +113,22 @@
           </ion-item>
 
           <ion-item>
-            <ion-button @click="promptTransaction">Prompt Transaction</ion-button>
+            <ion-button @click="promptTransaction"
+              >Prompt Transaction</ion-button
+            >
           </ion-item>
         </template>
         <template v-else>
           <ion-item>
-            <ion-label>ERC20 Token</ion-label>
+            <ion-label style="font-size: 0.9rem">Current Address</ion-label>
+          </ion-item>
+          <ion-item v-if="selectedAccount?.address">
+            <b style="font-size: 0.8rem">{{ selectedAccount?.address }}</b>
           </ion-item>
           <ion-item>
+            <ion-label>{{ isCanton ? "CIP-56" : "ERC20" }} Token </ion-label>
+          </ion-item>
+          <ion-item v-if="!isCanton">
             <ion-input
               aria-label="ERC20 Token"
               type="text"
@@ -132,35 +143,22 @@
             />
           </ion-item>
 
-          <ion-item button>
-            <ion-button @click="openModalAddContact(true)">
-              Load address from contacts
-            </ion-button>
-          </ion-item>
-
-          <ion-item>
-            <ion-label>Send To Address:</ion-label>
-          </ion-item>
-
-          <ion-item>
-            <ion-input
-              aria-label="address"
-              style="font-size: 0.8rem"
-              id="pasteAddress"
-              v-model="sendTo"
-            ></ion-input>
-            <ion-icon
-              style="margin-right: 0.5rem; cursor: pointer"
-              @click="paste('pasteAddress')"
-              :icon="clipboardOutline"
-              button
-            />
-          </ion-item>
-
-          <ion-item button>
-            <ion-button @click="openModalAddContact()">
-              Load address from contacts
-            </ion-button>
+          <ion-item v-if="isCanton">
+            <!-- Show select for Canton, input for others -->
+            <ion-select
+              aria-label="Canton Token"
+              v-model="erc20"
+              interface="popover"
+              placeholder="Select Token"
+            >
+              <ion-select-option
+                v-for="token in cantonTokens"
+                :key="token.address"
+                :value="token.address"
+              >
+                {{ token.symbol }}
+              </ion-select-option>
+            </ion-select>
           </ion-item>
 
           <ion-item>
@@ -196,9 +194,49 @@
               </svg>
             </ion-button>
             <ion-label>Current Balance</ion-label>
-            <b v-if="currentBalanceERC20">{{ currentBalanceERC20.toFixed(8) }}</b>
+            <b v-if="currentBalanceERC20">{{
+              currentBalanceERC20.toFixed(8)
+            }}</b>
             <b v-else-if="currentBalanceERC20 === null">Not Fetched</b>
             <b v-else-if="currentBalanceERC20 === 0">0</b>
+          </ion-item>
+
+          <ion-item>
+            <ion-label>Send To Address:</ion-label>
+          </ion-item>
+
+          <ion-item>
+            <ion-input
+              aria-label="address"
+              style="font-size: 0.8rem"
+              id="pasteAddress"
+              v-model="sendTo"
+            ></ion-input>
+            <ion-icon
+              style="margin-right: 0.5rem; cursor: pointer"
+              @click="paste('pasteAddress')"
+              :icon="clipboardOutline"
+              button
+            />
+          </ion-item>
+
+          <ion-item button>
+            <ion-button @click="openModalAddContact()">
+              Load address from contacts
+            </ion-button>
+          </ion-item>
+
+          <ion-item v-if="isCanton">
+            <ion-label>Memo (Optional)</ion-label>
+          </ion-item>
+
+          <ion-item v-if="isCanton">
+            <ion-input
+              aria-label="memo"
+              style="font-size: 0.8rem"
+              id="memo"
+              v-model="memo"
+            ></ion-input>
           </ion-item>
 
           <ion-item>
@@ -214,7 +252,9 @@
           </ion-item>
 
           <ion-item>
-            <ion-button @click="promptTransactionERC20">Prompt Transaction</ion-button>
+            <ion-button @click="promptTransactionERC20"
+              >Prompt Transaction</ion-button
+            >
           </ion-item>
         </template>
       </template>
@@ -251,6 +291,8 @@ import {
   IonItem,
   IonLabel,
   IonInput,
+  IonSelect,
+  IonSelectOption,
   IonButton,
   IonAlert,
   IonIcon,
@@ -286,21 +328,29 @@ import { wait } from "@/utils/misc";
 import { isCantonAddress } from "@/utils/canton";
 
 const sendTo = ref("");
-const memo = ref("")
-const isCanton = ref(false)
+const memo = ref("");
+const isCanton = ref(false);
 const alertOpen = ref(false);
 const alertMsg = ref("");
 const alertTitle = ref("Error");
 const loading = ref(true);
 const amount = ref(0);
 const erc20Amount = ref(0);
-const selectedNetwork = (ref(null) as unknown) as Ref<Network>;
-const selectedAccount = (ref(null) as unknown) as Ref<Account>;
+const selectedNetwork = ref(null) as unknown as Ref<Network>;
+const selectedAccount = ref(null) as unknown as Ref<Account>;
 const currentBalance = ref(0);
 const currentBalanceERC20 = ref(null) as Ref<number | null>;
 const loadingSend = ref(false);
 const currentSegment = ref("native");
 const erc20 = ref("");
+
+// In your component setup or data
+const cantonTokens = [
+  { address: "0xDE40000000000000000000000000000000000001", symbol: "USDCx" },
+  { address: "0xDE50000000000000000000000000000000000001", symbol: "HANDL" },
+  { address: "0xDE60000000000000000000000000000000000001", symbol: "CBTC" },
+  { address: "0xDE70000000000000000000000000000000000001", symbol: "CETH" },
+];
 
 const segmentChange = (e: CustomEvent) => {
   currentSegment.value = e.detail.value;
@@ -316,13 +366,16 @@ onIonViewWillEnter(async () => {
       return;
     }
 
-    if(selectedNetwork.value.chainId === 31337){
-      isCanton.value = true
-    }else{
-      isCanton.value = false
+    if (selectedNetwork.value.chainId === 31337) {
+      isCanton.value = true;
+    } else {
+      isCanton.value = false;
     }
 
-    const balanceRace = [getBalance(), new Promise((r) => wait(5000).then(() => r(-1)))];
+    const balanceRace = [
+      getBalance(),
+      new Promise((r) => wait(5000).then(() => r(-1))),
+    ];
     const balance = await Promise.race(balanceRace);
 
     if (balance === -1) {
@@ -346,9 +399,27 @@ const balanceOfERC20 = async () => {
   try {
     loading.value = true;
     const provider = (await getCurrentProvider()).provider;
-    const erc20Contract = new Contract(erc20.value, ERC20_PARTIAL_ABI, provider);
+
+    // If Canton is enabled, use Canton-specific formatting
+    if (isCanton.value === true) {
+      const balance = await provider.getBalance(selectedAccount.value.address);
+      // Format with 18 decimals and limit to 4 decimal places for clean UI
+      const formattedBalance = Number(formatUnits(balance, 18));
+      // Round to 4 decimal places
+      currentBalanceERC20.value = Math.round(formattedBalance * 10000) / 10000;
+      return currentBalanceERC20.value;
+    }
+
+    // Default: Standard ERC20 balance
+    const erc20Contract = new Contract(
+      erc20.value,
+      ERC20_PARTIAL_ABI,
+      provider
+    );
     const decimals = await erc20Contract.decimals();
-    const balance = await erc20Contract.balanceOf(selectedAccount.value.address);
+    const balance = await erc20Contract.balanceOf(
+      selectedAccount.value.address
+    );
     currentBalanceERC20.value = Number(formatUnits(balance, decimals));
     return currentBalanceERC20.value;
   } catch (e) {
@@ -400,6 +471,7 @@ const promptTransaction = async () => {
     from: selectedAccount.value.address,
     to: sendTo.value,
     memo: memo.value,
+    token: "Amulet",
     value,
     nonce,
     gasLimit: "0x0",
@@ -434,7 +506,7 @@ const promptTransactionERC20 = async () => {
     return;
   }
 
-  if (!isAddress(sendTo.value)) {
+  if (!isAddress(sendTo.value) && !isCantonAddress(sendTo.value)) {
     alertOpen.value = true;
     alertMsg.value = "Invalid send address";
     return;
@@ -442,7 +514,7 @@ const promptTransactionERC20 = async () => {
 
   if (!isAddress(erc20.value)) {
     alertOpen.value = true;
-    alertMsg.value = "Invalid ERC20 address";
+    alertMsg.value = "Invalid token address";
     return;
   }
 
@@ -456,11 +528,11 @@ const promptTransactionERC20 = async () => {
   try {
     const balance = await balanceOfERC20();
     if (balance === null) {
-      throw new Error("Invalid ERC20 address or balance");
+      throw new Error("Invalid token address or balance");
     }
   } catch (e) {
     alertOpen.value = true;
-    alertMsg.value = "Invalid ERC20 address or balance";
+    alertMsg.value = "Invalid token address or balance";
   }
 
   if (Number(amount.value) >= Number(currentBalanceERC20.value)) {
@@ -473,17 +545,39 @@ const promptTransactionERC20 = async () => {
   let tx;
   try {
     const provider = (await getCurrentProvider()).provider;
-    const erc20Contract = new Contract(erc20.value, ERC20_PARTIAL_ABI, provider);
+    const erc20Contract = new Contract(
+      erc20.value,
+      ERC20_PARTIAL_ABI,
+      provider
+    );
     const decimals = await erc20Contract.decimals();
     const value = parseUnits(erc20Amount.value.toString(), decimals).toString();
-    tx = {
-      from: selectedAccount.value.address,
-      to: erc20.value,
-      gasLimit: "0x0",
-      gasPrice: "0x0",
-      data: erc20Contract.interface.encodeFunctionData("transfer", [sendTo.value, value]),
-    };
+    if (isCanton.value === true) {
+      const nonce = (await getTxCount(selectedAccount.value.address)) + 1;
+      tx = {
+        from: selectedAccount.value.address,
+        to: sendTo.value,
+        token: cantonTokens.find((t) => t.address === erc20.value)?.symbol,
+        memo: memo.value,
+        value,
+        nonce,
+        gasLimit: "0x0",
+        gasPrice: "0x0",
+      };
+    } else {
+      tx = {
+        from: selectedAccount.value.address,
+        to: erc20.value,
+        gasLimit: "0x0",
+        gasPrice: "0x0",
+        data: erc20Contract.interface.encodeFunctionData("transfer", [
+          sendTo.value,
+          value,
+        ]),
+      };
+    }
   } catch (e) {
+    console.error(e);
     alertOpen.value = true;
     alertMsg.value = "Error populating transaction";
     loading.value = false;

@@ -42,13 +42,13 @@ export const foxyfyManifest = async (writeFFManifest = true) => {
     pkg.author = 'andrei0x309'
     pkg.developer = {
         name: 'andrei0x309',
-        url: 'https://github.com/andrei0x309/clear-wallet'
+        url: 'https://github.com/andrei0x309/metatarz-wallet'
     }
 
     // Add Firefox specific settings
     pkg.browser_specific_settings = {
         gecko: {
-            id: 'clear-wallet@flashsoft.eu',
+            id: 'metatarz-wallet@flashsoft.eu',
             strict_min_version: '128.0' // minimum version that supports injecting into world main
         },
         // For later use FF Android lack neaded features maybe in the future they will be implemented

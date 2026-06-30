@@ -229,46 +229,33 @@
           </ion-item>
           <div class="ion-padding" slot="content">
             <p>
-              Clear EVM Wallet (CLW) is a fully open-source wallet built with Vue, Ionic,
+              Metatarz Wallet is a fully open-source wallet built with Vue, Ionic,
               and Ethers.
             </p>
             <p>
-              If a website does not detect Clear Wallet try selecting MetaMask, as this
+              If a website does not detect Metatarz Wallet try selecting MetaMask, as this
               wallet also implements the metamask API. It's recommended to not have
-              MetaMask enabled at the same time as Clear Wallet.
+              MetaMask enabled at the same time as Metatarz Wallet.
             </p>
             <p>
-              Unlike most wallets, Clear Wallet has no ads, no analytics, no trackers, no
-              bloatware, no telemetry, no data collection, no sponsored content, no
-              sponsored DApps, no sponsored tokens, no sponsored NFTs, and no fees. It is
-              a clean wallet with no revenue model, made by a single developer, if you
-              want to support this project financially you can donate
-              <a href="#" @click="openTab('https://blog.flashsoft.eu/tip-me')">here</a>
+              Unlike most wallets, Metatarz Wallet has no ads, no analytics and no trackers.
             </p>
             <p>
               Github Repo:
-              <a href="#" @click="openTab('https://github.com/andrei0x309/clear-wallet')"
+              <a href="#" @click="openTab('https://github.com/metatarzxyz/metatarz-wallet')"
                 >LINK</a
               >
             </p>
             <p>
               Docs Website:
-              <a href="#" @click="openTab('https://clear-wallet.flashsoft.eu')">LINK</a>
-            </p>
-            <br />
-            <p style="margin-bottom: 0.2rem">Places you can check me out:</p>
-            <p>
-              Github andrei0x309 -
-              <a href="#" @click="openTab('https://github.com/andrei0x309')">LINK</a>
+              <a href="#" @click="openTab('https://wallet.metatarz.xyz')">LINK</a>
             </p>
             <p>
-              Mirror Profile
-              <a href="#" @click="openTab('https://mirror.xyz/andrei0x309.eth')">LINK</a>
+              Support:
+              <span>support@metatarz.xyz</span>
             </p>
-            <p>
-              Blog Flashsoft
-              <a href="#" @click="openTab('https://blog.flashsoft.eu')">LINK</a>
-            </p>
+            
+
           </div>
         </ion-accordion>
       </ion-accordion-group>

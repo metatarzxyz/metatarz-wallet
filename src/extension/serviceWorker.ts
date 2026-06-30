@@ -39,7 +39,7 @@ import {
     getSelectedAddress,
     getRpcPerformance
 } from '@/utils/wallet'
-import type { RequestArguments } from '@/extension/types'
+import type { Network, Networks, RequestArguments } from '@/extension/types'
 import { rpcError } from '@/extension/rpcConstants'
 import { updatePrices } from '@/utils/gecko'
 import { allTemplateNets, noFoundNetworks } from '@/utils/networks'
@@ -134,14 +134,16 @@ const reInjectContentScripts = async () => {
 const addDefaultNetworksOnInstall = async () => {
     const userNetworks = await getNetworks()
     if (Object.keys(userNetworks).length === 0) {
-        const networks = []
+        let networks = {} as Networks
         const selectedNetwork = allTemplateNets[noFoundNetworks.defaultNetworks[0]]
         for (const network of noFoundNetworks.defaultNetworks) {
             if (allTemplateNets[network]) {
-                networks.push(allTemplateNets[network])
+                networks[network] = allTemplateNets[network]
+
             }
         }
         replaceNetworks(networks)
+   
         saveSelectedNetwork(selectedNetwork)
     }
      
@@ -670,7 +672,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                         const [account, network] = await Promise.all([getSelectedAccount(), getSelectedNetwork()])
                         if (!account || !('address' in account)) {
                             await chrome.windows.create({
-                                height: 450,
+                                height: 550,
                                 width: 400,
                                 url: chrome.runtime.getURL(`index.html?route=wallet-error&param=${strToHex('No account is selected you need to have an account selected before trying to make a transaction')}&rid=${String(message?.resId ?? '')}`),
                                 type: 'popup'
@@ -679,7 +681,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                         }
                         if (!network || !('chainId' in network)) {
                             await chrome.windows.create({
-                                height: 450,
+                                height: 550,
                                 width: 400,
                                 url: chrome.runtime.getURL(`index.html?route=wallet-error&param=${strToHex('No network is selected you need to have a network selected before trying to make a transaction')}&rid=${String(message?.resId ?? '')}`),
                                 type: 'popup'
@@ -701,7 +703,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
 
                         await new Promise((resolve, reject) => {
                             chrome.windows.create({
-                                height: 450,
+                                height: 550,
                                 width: 400,
                                 url: chrome.runtime.getURL(`index.html?route=sign-tx&param=${serializeParams}&rid=${String(message?.resId ?? '')}&website=${strToHex(webDomain)}`),
                                 type: 'popup'
@@ -768,7 +770,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                                 message: 'TX Failed'
                             })
                             chrome.windows.create({
-                                height: 450,
+                                height: 550,
                                 width: 400,
                                 url: chrome.runtime.getURL(`index.html?route=wallet-error&param=${strToHex(String(err))}&rid=${String(message?.resId ?? '')}`),
                                 type: 'popup'
@@ -940,7 +942,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
 
                             await new Promise((resolve, reject) => {
                                 chrome.windows.create({
-                                    height: 450,
+                                    height: 550,
                                     width: 400,
                                     url: chrome.runtime.getURL(`index.html?route=switch-network&param=${String(message?.params?.[0]?.chainId ?? '')}&rid=${String(message?.resId ?? '')}&website=${strToHex(webDomain)}`),
                                     type: 'popup'
@@ -994,7 +996,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                             try {
                                 await new Promise((resolve, reject) => {
                                     chrome.windows.create({
-                                        height: 450,
+                                        height: 550,
                                         width: 400,
                                         url: chrome.runtime.getURL(`index.html?route=request-network&param=${strToHex(JSON.stringify({ ...{ website: message?.website ?? '' }, ...(message?.params?.[0] ?? {}) }) ?? '')}&rid=${String(message?.resId ?? '')}`),
                                         type: 'popup'
@@ -1056,7 +1058,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                     sendResponse({
                         error: true,
                         code: rpcError.INVALID_PARAM,
-                        message: 'ClearWallet: Invalid request method ' + (message?.method ?? '')
+                        message: 'MetatarzWallet: Invalid request method ' + (message?.method ?? '')
                     })
                     break
                 }

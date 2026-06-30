@@ -252,129 +252,141 @@ const onEditAccount = async () => {
 
 const onAddAccount = async () => {
   try {
-    let p1 = Promise.resolve();
-    if (name.value.length < 1) {
-      alertMsg.value = "Name cannot be empty.";
-      alertOpen.value = true;
-      return;
-    }
-    if (pk.value.length === 64) {
-      pk.value = `0x${pk.value.trim()}`;
-    }
-    if (pk.value.length !== 66) {
-      alertMsg.value = "Provided private key is invalid.";
-      alertOpen.value = true;
-      return;
-    }
-
+    // 1. Validate input
+    if (!validateInput()) return;
+    
+    // 2. Prepare wallet and data
     const wallet = new ethers.Wallet(pk.value);
-    if (!accountsProm) {
-      accountsProm = getAccounts();
+    const accounts = await getAccountsData();
+    const settings = await getSettingsData();
+    
+    // 3. Check for duplicate account
+    if (accounts?.find((account) => account.address === wallet.address)) {
+      alertMsg.value = "Account already exists.";
+      alertOpen.value = true;
+      return;
     }
-    if (!settingsProm) {
-      settingsProm = getSettings();
-    }
-    const accounts = (await accountsProm) as Account[];
-    const settings = (await settingsProm) as Settings;
-    if (settings.enableStorageEnctyption) {
+    
+    // 4. Handle encryption if enabled
+    let cryptoParams = null;
+    if (settings?.enableStorageEnctyption) {
       const pass = await openModal();
       if (!pass) {
         alertMsg.value = "Cannot add account without encryption password.";
         alertOpen.value = true;
         return;
       }
-      const cryptoParams = await getCryptoParams(pass);
-      if ((accounts.length ?? 0) < 1) {
-        p1 = saveSelectedAccount({
-          address: wallet.address,
-          name: name.value,
-          pk: pk.value,
-          encPk: await encrypt(pk.value, cryptoParams),
-        });
-      } else {
-        if (accounts.find((account) => account.address === wallet.address)) {
-          alertMsg.value = "Account already exists.";
-          alertOpen.value = true;
-          return;
-        }
-      }
-
-      loading.value = true;
-      const data = await registerWallet(pk.value);
-
-      let p2;
-      if (data) {
-        //save canton account data
-        p2 = saveAccount({
-          address: wallet.address,
-          name: name.value,
-          pk: pk.value,
-          encPk: await encrypt(pk.value, cryptoParams),
-          cantonParty: data?.party,
-          cantonFingerprint: data?.fingerprint,
-        });
-      } else {
-        p2 = saveAccount({
-          address: wallet.address,
-          name: name.value,
-          pk: pk.value,
-          encPk: await encrypt(pk.value, cryptoParams),
-        });
-      }
-      await Promise.all([p1, p2]);
-    } else {
-      if ((accounts.length ?? 0) < 1) {
-        p1 = saveSelectedAccount({
-          address: wallet.address,
-          name: name.value,
-          pk: pk.value,
-          encPk: "",
-        });
-      } else {
-        if (accounts.find((account) => account.address === wallet.address)) {
-          alertMsg.value = "Account already exists.";
-          alertOpen.value = true;
-          return;
-        }
-      }
-
-      loading.value = true;
-      const data = await registerWallet(pk.value);
-
-      let p2;
-      if (data) {
-        //save canton account data
-        p2 = saveAccount({
-          address: wallet.address,
-          name: name.value,
-          pk: pk.value,
-          encPk: "",
-          cantonParty: data?.party,
-          cantonFingerprint: data?.fingerprint,
-        });
-      } else {
-        //normal account saving
-        p2 = saveAccount({
-          address: wallet.address,
-          name: name.value,
-          pk: pk.value,
-          encPk: "",
-        });
-      }
-
-      await Promise.all([p1, p2]);
+      cryptoParams = await getCryptoParams(pass);
     }
-    if (isEdit) {
-      router.push("/tabs/accounts");
-    } else {
-      router.push("/tabs/home");
+    
+    // 5. Register wallet with Canton
+    loading.value = true;
+    const cantonData = await registerWallet(pk.value);
+    
+    if (cantonData?.error) {
+      alertMsg.value = 'Failed to register Canton wallet: ' + cantonData.error;
+      alertOpen.value = true;
+      return;
     }
+    
+    // 6. Prepare account data
+    const accountData = await buildAccountData(wallet, cryptoParams, cantonData);
+    
+    // 7. Save account(s)
+    const savePromises = [];
+    
+    // Always save the main account
+    savePromises.push(saveAccount(accountData));
+    
+    // If no accounts exist yet, also set as selected
+    if (accounts?.length === 0) {
+      savePromises.push(saveSelectedAccount(accountData));
+    }
+    
+    await Promise.all(savePromises);
+    
+    // 8. Navigate and cleanup
+    await navigateAfterSave();
     resetFields();
+    
   } catch (e) {
-    console.log(e);
+    console.error(e);
+    alertMsg.value = "An error occurred while adding the account.";
+    alertOpen.value = true;
   } finally {
     loading.value = false;
-    router.push("/tabs/accounts");
+  }
+};
+
+// Helper functions
+const validateInput = (): boolean => {
+  if (name.value.length < 1) {
+    alertMsg.value = "Name cannot be empty.";
+    alertOpen.value = true;
+    return false;
+  }
+  
+  let privateKey = pk.value;
+  if (privateKey.length === 64) {
+    privateKey = `0x${privateKey.trim()}`;
+    pk.value = privateKey;
+  }
+  
+  if (privateKey.length !== 66) {
+    alertMsg.value = "Provided private key is invalid.";
+    alertOpen.value = true;
+    return false;
+  }
+  
+  return true;
+};
+
+const getAccountsData = async (): Promise<Account[] | undefined> => {
+  if (!accountsProm) {
+    accountsProm = getAccounts();
+  }
+  return await accountsProm;
+};
+
+const getSettingsData = async (): Promise<Settings | undefined> => {
+  if (!settingsProm) {
+    settingsProm = getSettings();
+  }
+  return await settingsProm;
+};
+
+const buildAccountData = async (
+  wallet: ethers.Wallet,
+  cryptoParams: any | null,
+  cantonData: any | null
+): Promise<Account> => {
+  const baseAccount: Partial<Account> = {
+    address: wallet.address,
+    name: name.value,
+    pk: pk.value,
+  };
+  
+  // Handle encryption
+  if (cryptoParams) {
+    baseAccount.encPk = await encrypt(pk.value, cryptoParams);
+  } else {
+    baseAccount.encPk = "";
+  }
+  
+  // Handle Canton data
+  if (cantonData) {
+    baseAccount.cantonParty = cantonData.party;
+    baseAccount.cantonFingerprint = cantonData.fingerprint;
+  }
+  
+  return baseAccount as Account;
+};
+
+const navigateAfterSave = async () => {
+  if (isEdit) {
+    await router.push("/tabs/accounts");
+  } else {
+    await router.push("/tabs/home");
   }
 };
 

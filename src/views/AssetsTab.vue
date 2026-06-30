@@ -27,8 +27,18 @@
             >Assets for: {{ selectedAccount?.name }}</ion-label
           >
         </ion-item>
-        <ion-item button @click="copyText(selectedAccount?.address, getToastRef())">
+        <ion-item
+          button
+          @click="copyText(selectedAccount?.address, getToastRef())"
+        >
           <p style="font-size: 0.7rem">{{ selectedAccount?.address }}</p>
+          <ion-icon style="margin-left: 0.5rem" :icon="copyOutline"></ion-icon>
+        </ion-item>
+        <ion-item
+          button
+          @click="copyText(selectedAccount?.cantonParty || '', getToastRef())"
+        >
+          <p style="font-size: 0.7rem">{{ selectedAccount?.cantonParty }}</p>
           <ion-icon style="margin-left: 0.5rem" :icon="copyOutline"></ion-icon>
         </ion-item>
         <ion-item v-if="assetsValue?.value">
@@ -54,18 +64,6 @@
           </ion-list>
         </ion-item>
       </template>
-      <ion-item>
-        <div style="display: flex; flex-direction: column; margin: auto">
-          <button
-            alt="ERC20 Bridge"
-            @click="openTab('https://erc20-bridge.pages.dev/')"
-            class="bridge-button"
-          >
-            <bridge-icon />
-            Community ERC20 Bridge
-          </button>
-        </div>
-      </ion-item>
       <template v-if="noSelectedAccount">
         <p class="warn-msg">
           No account selected, please select an account to see assets.
@@ -73,8 +71,8 @@
       </template>
       <template v-else-if="isError">
         <p class="warn-msg">
-          Assets info could not be retrieved because of an http error, API down or
-          conectivity issues.
+          Assets info could not be retrieved because of an http error, API down
+          or conectivity issues.
         </p>
       </template>
       <template v-else-if="noAssets">
@@ -87,11 +85,18 @@
           </ion-item>
           <ion-list>
             <ion-item v-for="token of shownTokens" :key="token.token.address">
-              <ion-avatar style="margin-right: 1rem; width: 1.6rem; height: 1.6rem">
+              <ion-avatar
+                style="margin-right: 1rem; width: 1.6rem; height: 1.6rem"
+              >
                 <img
                   v-if="token?.token?.project?.logoUrl"
                   :alt="token?.token?.name"
                   :src="token?.token?.project?.logoUrl"
+                />
+                 <img
+                  v-else-if="token?.token?.name === 'Canton Network'"
+                  :alt="token?.token?.name"
+                  :src="getUrl('assets/chain-icons/canton.webp')"
                 />
                 <img
                   v-else
@@ -115,7 +120,9 @@
             </ion-item>
             <ion-item v-if="alltokens.length > shownTokens.length">
               <ion-button
-                @click="shownTokens = alltokens.slice(0, shownTokens.length + 10)"
+                @click="
+                  shownTokens = alltokens.slice(0, shownTokens.length + 10)
+                "
                 >Load More</ion-button
               >
             </ion-item>
@@ -144,13 +151,23 @@ import {
   IonLoading,
   IonIcon,
 } from "@ionic/vue";
-import { getSelectedAccount, copyText, getUrl, openTab } from "@/utils/platform";
-import type { Account, UniSwapPortfolioResponse } from "@/extension/types";
-import { formatNumber } from "@/utils/wallet";
+import {
+  getSelectedAccount,
+  copyText,
+  getUrl,
+  openTab,
+  getSelectedNetwork,
+  getPrices,
+} from "@/utils/platform";
+import type { Account, Network, UniSwapPortfolioResponse } from "@/extension/types";
+import { formatNumber, getBalance } from "@/utils/wallet";
 import ArrowDown from "@/components/icons/ArrowDown.vue";
 import ArrowUp from "@/components/icons/ArrowUp.vue";
 import { copyOutline } from "ionicons/icons";
 import BridgeIcon from "@/components/icons/Bridge.vue";
+import { formatEther } from "ethers";
+import { I } from "vue-router/dist/router-CWoNjPRp.mjs";
+import { chainIdToPriceId } from "@/utils/networks";
 
 const selectedAccount = ref({}) as Ref<Account>;
 const loading = ref(true);
@@ -159,6 +176,9 @@ const noSelectedAccount = ref(false);
 const noAssets = ref(false);
 const toastState = ref(false);
 const getToastRef = () => toastState;
+const isCanton = ref(false);
+const selectedNetwork = ref(null) as unknown as Ref<Network>;
+
 const alltokens = ref({}) as Ref<
   UniSwapPortfolioResponse["data"]["portfolios"][0]["tokenBalances"]
 >;
@@ -211,6 +231,7 @@ const getUniwapAssets = async (ownerAddress: string) => {
         "AVALANCHE",
         "BLAST",
         "ZORA",
+        "MONAD",
       ],
     },
     query:
@@ -233,11 +254,17 @@ const getUniwapAssets = async (ownerAddress: string) => {
 
 onIonViewWillEnter(async () => {
   selectedAccount.value = await getSelectedAccount();
-
+  selectedNetwork.value = await getSelectedNetwork();
   if (!selectedAccount.value) {
     noSelectedAccount.value = true;
     loading.value = false;
     return;
+  }
+
+  if (selectedNetwork.value.chainId === 31337) {
+    isCanton.value = true;
+  } else {
+    isCanton.value = false;
   }
 
   const result = await getUniwapAssets(selectedAccount.value.address);
@@ -248,17 +275,81 @@ onIonViewWillEnter(async () => {
     return;
   }
 
+  const cantonBalance = Number(formatEther((await getBalance()).toString()));
+
+  const cantonEntry = {
+    id: "canton-native-balance",
+    quantity: cantonBalance,
+    denominatedValue: { value: cantonBalance },
+    token: {
+      id: "canton-native",
+      address: "native",
+      chain: "Canton",
+      symbol: "CC",
+      name: "Canton Network",
+      decimals: 9,
+      standard: "NATIVE",
+      project: {
+        id: "canton",
+        name: "Canton Network",
+        logo: null,
+        safetyLevel: "verified",
+        logoUrl: null,
+        isSpam: false,
+        __typename: "Project",
+      },
+      __typename: "Token",
+    },
+    tokenProjectMarket: {
+      id: "canton-market",
+      pricePercentChange: null,
+      tokenProject: {
+        id: "canton",
+        logoUrl: null,
+        isSpam: false,
+        __typename: "TokenProject",
+      },
+      __typename: "TokenProjectMarket",
+    },
+    __typename: "TokenBalance",
+  };
+
   if (result?.data?.portfolios?.length) {
     alltokens.value = result.data.portfolios[0].tokenBalances.filter(
       (token) => token.denominatedValue && !token.token.project.isSpam
     );
-    shownTokens.value = alltokens.value.slice(0, 10);
-    assetsValue.value = result.data.portfolios[0].tokensTotalDenominatedValue;
-    assetsChange.value = result.data.portfolios[0].tokensTotalDenominatedValueChange;
+
+    // Add Canton balance if > 0
+    if (cantonBalance > 0) {
+      alltokens.value = [cantonEntry, ...alltokens.value];
+    }
   } else {
-    noAssets.value = true;
+    alltokens.value = cantonBalance > 0 ? [cantonEntry] : [];
   }
 
+
+  shownTokens.value = alltokens.value.slice(0, 10);
+  console.log(shownTokens.value)
+
+  // Update total value to include Canton balance
+
+  const prices = await getPrices()
+  const cantoncoindinusd = prices[chainIdToPriceId(31337)]?.usd ?? 1;
+    
+  const uniswapTotal =
+    result?.data?.portfolios?.[0]?.tokensTotalDenominatedValue?.value || 0;
+  assetsValue.value = {
+    id: "total-value",
+    value: uniswapTotal + +(cantonBalance*cantoncoindinusd).toFixed(2),
+  };
+
+  assetsChange.value = result?.data?.portfolios?.[0]
+    ?.tokensTotalDenominatedValueChange || {
+    absolute: { id: "absolute-change", value: 0 },
+    percentage: { id: "percentage-change", value: 0 },
+  };
+
+  noAssets.value = alltokens.value.length === 0;
   loading.value = false;
 });
 </script>

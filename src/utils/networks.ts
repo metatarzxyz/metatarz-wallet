@@ -2,10 +2,11 @@
 import type { Network } from '@/extension/types'
 
 export const noFoundNetworks = {
-    selectedDefaultNetwork: 8453, // Base Mainnet
+    selectedDefaultNetwork: 31337, // Canton Mainnet
     defaultNetworks: [
+        31337, // Canton Mainnet
+        143, // Monad
         8453, // Base Mainnet
-        42161, // Arbitrum One
         137, // Polygon Mainnet
         10, // Optimism Mainnet
         1, // Ethereum Main
@@ -16,12 +17,30 @@ export const noFoundNetworks = {
 export const mainNets: {[key: number]: Network} = {
     1: {
         name: 'Ethereum Main',
-        rpc: 'https://eth-mainnet.public.blastapi.io',
+        rpc: 'https://eth.drpc.org',
         chainId: 1,
         explorer: 'https://etherscan.io',
         icon: 'eth.webp',
         symbol: 'ETH',
         priceId: 'ethereum',
+    },
+    143: {
+        name: 'Monad',
+        rpc: 'https://rpc.monad.xyz',
+        chainId: 143,
+        explorer: 'https://monadscan.com',
+        icon: 'mon.webp',
+        symbol: 'MON',
+        priceId: 'monad',
+    },
+    31337: {
+        name: 'Canton Mainnet',
+        rpc: 'http://localhost:8081',
+        chainId: 31337,
+        explorer: 'https://ccview.io',
+        icon: 'canton.webp',
+        symbol: 'CC',
+        priceId: 'canton-network',
     },
     137: {
         name: 'Polygon Mainnet',
@@ -30,7 +49,7 @@ export const mainNets: {[key: number]: Network} = {
         explorer: 'https://polygonscan.com',
         icon:'polygon.webp',
         symbol: 'POL',
-        priceId: 'matic-network'
+        priceId: 'polygon-ecosystem-token'
     },
     100: {
         name: 'Gnosis',

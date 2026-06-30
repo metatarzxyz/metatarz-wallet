@@ -5,7 +5,7 @@ const args = Bun.argv.slice(2);
 const secrets = args[0]
 const event = args[1]
 const action = args[2]
-const changeLogUrl = 'https://clear-wallet.flashsoft.eu/docs/automated-changelog/'
+const changeLogUrl = 'https://wallet.metatarz.xyz'
 
 type TGithubEvent = {
     inputs: {
@@ -68,7 +68,7 @@ const main = async () => {
     if (action === 'update') {
         const VERSION = GithubEvent.inputs.version;
         const FCONLY = GithubEvent.inputs.fconly;
-        const message = `Clear Wallet - New version ${VERSION} released! \n
+        const message = `Metatarz Wallet - New version ${VERSION} released! \n
 - ChromeStore: https://bit.ly/clw-evm \n
 - ChangeLog: https://bit.ly/clw-cl \n
 - Submited by @andrei0x309 \n`
@@ -84,7 +84,7 @@ const main = async () => {
             })
             if (fcPostHash) {
                 await new Promise((resolve) => setTimeout(resolve, 3000));
-                const launchCasterMessage = `@launch New Clear Wallet version ${VERSION} released! \n\nChanges: ${changeLogUrl}`
+                const launchCasterMessage = `@launch New Metatarz Wallet version ${VERSION} released! \n\nChanges: ${changeLogUrl}`
 
                 await fchubUtils.createFarcasterPost({
                     content: launchCasterMessage, replyTo: {
@@ -104,9 +104,9 @@ const main = async () => {
 
         if (ENABLED && !GithubEvent.forced && isAnnounceMessage) {
             const commiter = GithubEvent?.head_commit?.author.username || GithubEvent?.head_commit?.committer?.username || ''
-            const message = `Github ClearWallet new repo commit!\n
+            const message = `Github MetatarzWallet new repo commit!\n
 - ChromeStore: https://bit.ly/clw-evm \n
-- Docs: https://clear-wallet.flashsoft.eu \n
+- Docs: https://metatarz-wallet.flashsoft.eu \n
 - Commit: ${GithubEvent.head_commit.url} \n
 ${commiter ? `- Commiter: @${commiter}` : ''}
             `;

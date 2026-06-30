@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-title>Read From Contract</ion-title>
+        <ion-title>Deposit Tokens</ion-title>
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding">

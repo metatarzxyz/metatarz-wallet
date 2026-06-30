@@ -43,6 +43,15 @@
           &nbsp;
           <ion-icon class="copy-icon" :icon="copyOutline"></ion-icon>
         </ion-item>
+        <ion-item
+          class="no-inner-border"
+          style="cursor: pointer"
+          @click="copyText(account.cantonParty || '', getToastRef())"
+        >
+          <p style="font-size: 0.7rem">{{ account?.cantonParty }}</p>
+          &nbsp;
+          <ion-icon class="copy-icon" :icon="copyOutline"></ion-icon>
+        </ion-item>
         <ion-item style="margin-top: -0.7rem">
           <ion-chip color="primary" @click="viewPk(account.address)">View Pk</ion-chip>
           <ion-chip color="primary" @click="deleteAccount(account.address)"

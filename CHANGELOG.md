@@ -58,7 +58,7 @@
 
 - added memory queues for messages to improve performance
 - handled disconnect better
-- Emulating now MetaMask provider for EIP6963 to detect it when Metamask SDK is used in addition to the Clear Wallet provider
+- Emulating now MetaMask provider for EIP6963 to detect it when Metamask SDK is used in addition to the Metatarz Wallet provider
 - added notification when RPC URL seems unresponsive
 - added live performance measuring for RPC on Home UI
 - replaced node types with bun types
@@ -308,7 +308,7 @@
 ## Manifest Version 1.2.3
 
 - injected stub with chrome feature available in chrome 103 ( register world ) to bypass CSP
-- clear up some console errors
+- metatarz up some console errors
 - pushed minimum version to 103
 
 ## Manifest Version 1.2.2

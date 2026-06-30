@@ -94,7 +94,7 @@ window.addEventListener("message", (event) => {
         type: "CLWALLET_PAGE",
         data: {
           data: {
-            result: { error: true, message: 'ClearWallet: Unknown method requested ' + (event?.data?.data?.data?.method ?? '') }
+            result: { error: true, message: 'MetatarzWallet: Unknown method requested ' + (event?.data?.data?.data?.method ?? '') }
           }
         }
         , resId: event.data.resId

@@ -2,7 +2,7 @@
 
 // const config: CapacitorConfig = {
 //   appId: 'io.ionic.starter',
-//   appName: 'Clear Wallet',
+//   appName: 'Metatarz Wallet',
 //   webDir: 'dist',
 //   bundledWebRuntime: false
 // };

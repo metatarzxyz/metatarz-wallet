@@ -50,15 +50,15 @@
               <ion-label>Send Tokens</ion-label>
             </ion-tab-button>
 
-            <ion-tab-button tab="read-contract" href="/tabs/read-contract">
+            <!-- <ion-tab-button tab="deposit-token" href="/tabs/deposit-token">
               <ion-icon :icon="glassesOutline"></ion-icon>
-              <ion-label>Read Contracts</ion-label>
-            </ion-tab-button>
+              <ion-label>Deposit Tokens</ion-label>
+            </ion-tab-button> -->
 
-            <ion-tab-button tab="write-contract" href="/tabs/write-contract">
+            <!-- <ion-tab-button tab="write-contract" href="/tabs/write-contract">
               <ion-icon :icon="pushOutline"></ion-icon>
               <ion-label>Write Contracts</ion-label>
-            </ion-tab-button>
+            </ion-tab-button> -->
           </div>
         </ion-tab-bar>
       </ion-tabs>
