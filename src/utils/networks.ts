@@ -35,7 +35,7 @@ export const mainNets: {[key: number]: Network} = {
     },
     31337: {
         name: 'Canton Mainnet',
-        rpc: 'http://localhost:8081',
+        rpc: 'https://canton.rpc.wallet.metatarz.xyz',
         chainId: 31337,
         explorer: 'https://ccview.io',
         icon: 'canton.webp',

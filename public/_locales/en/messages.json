@@ -4,7 +4,7 @@
     "description": "Metatarz Canton EVM Wallet"
   },
   "appDesc": {
-    "message": "Metatarz Wallet is the first EVM native Canton wallet built for privacy and security. Implements Metamask API and enables ERC-20 style interactions with Splice-compliant CIP-56 tokens.",
-    "description": "Metatarz Wallet is the first EVM native Canton wallet built for privacy and security. Implements Metamask API and enables ERC-20 style interactions with Splice-compliant CIP-56 tokens."
+    "message": "Metatarz Wallet is the first EVM native Canton wallet built for privacy and security.",
+    "description": "Metatarz Wallet is the first EVM native Canton wallet built for privacy and security."
   }
 }
