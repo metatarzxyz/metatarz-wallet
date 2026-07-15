@@ -51,8 +51,8 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
 
 
     const prepareResponse = await callPrepare(url, { message, sig: signature, ...(type === 'transfer' ? { to: params?.to, amount: params?.value, 
-        //token: params?.token,
-        token: "Amulet", // TODO: replace
+        token: params?.token,
+        //token: "Amulet", // TODO: replace
         memo: params?.memo } : {}), type })
 
 
@@ -122,6 +122,8 @@ export const registerWallet = async (pk: string) => {
             }
         }
 
+
+
         if (data?.user_exists) {
             return {
 
@@ -150,6 +152,8 @@ export const registerWallet = async (pk: string) => {
         if (registerResponse && !registerResponse.user_exists) {
             //send preapproval transaction
             await sendCantonTransaction({}, "preapproval", registerResponse?.party, pk)
+            await sendCantonTransaction({}, "preapproval2", registerResponse?.party, pk)
+
         }
 
 

@@ -525,8 +525,9 @@ const promptTransactionERC20 = async () => {
   }
 
   // get current erc 20 balance
+  let balance
   try {
-    const balance = await balanceOfERC20();
+    balance = await balanceOfERC20();
     if (balance === null) {
       throw new Error("Invalid token address or balance");
     }
@@ -535,7 +536,7 @@ const promptTransactionERC20 = async () => {
     alertMsg.value = "Invalid token address or balance";
   }
 
-  if (Number(amount.value) >= Number(currentBalanceERC20.value)) {
+  if (Number(amount.value) >= Number(balance)) {
     alertOpen.value = true;
     alertMsg.value = "Insufficient balance";
     return;
