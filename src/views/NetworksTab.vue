@@ -93,9 +93,23 @@ const loading = ref(true);
 const loadData = () => {
   const pAccounts = getNetworks();
   Promise.all([pAccounts]).then((res) => {
-    console.log(res)
-    if(res[0]){
-    networks.value = res[0];
+    console.log(res);
+    if (res[0]) {
+      const networksObj = res[0];
+      
+      // Convert to array for display
+      const networksArray = Object.values(networksObj);
+      
+      // Sort with Canton first
+      networksArray.sort((a: any, b: any) => {
+        if (a.chainId === 31337) return -1;
+        if (b.chainId === 31337) return 1;
+        return 0;
+      });
+      
+      // Store as array if your component expects an array
+      // or keep as object but now in correct order
+      networks.value = networksArray;
     }
     loading.value = false;
   });

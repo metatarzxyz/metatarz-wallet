@@ -400,12 +400,44 @@ const balanceOfERC20 = async () => {
     loading.value = true;
     const provider = (await getCurrentProvider()).provider;
 
-    // If Canton is enabled, use Canton-specific formatting
+    // If Canton is enabled, use Canton-specific formatting with eth_call
     if (isCanton.value === true) {
-      const balance = await provider.getBalance(selectedAccount.value.address);
-      // Format with 18 decimals and limit to 4 decimal places for clean UI
+      // Get the token contract address (erc20.value should be the Canton token contract)
+      const tokenAddress = erc20.value;
+
+      // Create the balanceOf call data
+      // 0x70a08231 is the balanceOf function selector
+      // Address needs to be padded to 32 bytes (64 hex chars with leading zeros)
+      const address = selectedAccount.value.address.toLowerCase();
+      const addressWithoutPrefix = address.startsWith("0x")
+        ? address.slice(2)
+        : address;
+      const paddedAddress = addressWithoutPrefix.padStart(64, "0");
+      const data = `0x70a08231${paddedAddress}`;
+
+      // Make the eth_call
+      const result = await provider.send("eth_call", [
+        {
+          to: tokenAddress,
+          data: data,
+        },
+        "latest",
+      ]);
+
+      // Parse the result (returns hex string)
+      const balanceHex = result;
+
+      // Convert hex to BigInt
+      let balance: bigint;
+      if (balanceHex === "0x" || balanceHex === "0x0") {
+        balance = 0n;
+      } else {
+        balance = BigInt(balanceHex);
+      }
+
+      // Format with 18 decimals (Canton tokens use 18 decimals)
       const formattedBalance = Number(formatUnits(balance, 18));
-      // Round to 4 decimal places
+      // Round to 4 decimal places for clean UI
       currentBalanceERC20.value = Math.round(formattedBalance * 10000) / 10000;
       return currentBalanceERC20.value;
     }
@@ -525,7 +557,7 @@ const promptTransactionERC20 = async () => {
   }
 
   // get current erc 20 balance
-  let balance
+  let balance;
   try {
     balance = await balanceOfERC20();
     if (balance === null) {

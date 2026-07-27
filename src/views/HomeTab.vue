@@ -6,9 +6,17 @@
           <ion-avatar
             @click="openTab('https://wallet.metatarz.xyz')"
             class="link-docs"
-            style="margin: 0.3rem; width: 1.6rem; height: 1.6rem; display: inline-flex"
+            style="
+              margin: 0.3rem;
+              width: 1.6rem;
+              height: 1.6rem;
+              display: inline-flex;
+            "
           >
-            <img alt="clw" :src="getUrl('assets/extension-icon/wallet_48.png')" />
+            <img
+              alt="clw"
+              :src="getUrl('assets/extension-icon/wallet_48.png')"
+            />
           </ion-avatar>
           <span
             @click="openTab('https://wallet.metatarz.xyz')"
@@ -69,19 +77,24 @@
             )
           "
         >
-          <p style="font-size: 0.7rem; color: #aca3bb">{{ selectedAccount?.address }}</p>
+          <p style="font-size: 0.7rem; color: #aca3bb">
+            {{ selectedAccount?.address }}
+          </p>
           <ion-icon style="margin-left: 0.5rem" :icon="copyOutline"></ion-icon>
         </ion-item>
         <ion-item
-          v-if="!loading && selectedNetwork?.explorer && selectedAccount?.address"
+          v-if="
+            !loading && selectedNetwork?.explorer && selectedAccount?.address
+          "
         >
           <ion-button
             @click="
               openTab(
-                `${selectedNetwork.explorer}/${isCanton ? 'party/' + selectedAccount?.cantonParty : 'address/' + selectedAccount?.address}`.replace(
-                  '//',
-                  '/'
-                )
+                `${selectedNetwork.explorer}/${
+                  isCanton
+                    ? 'party/' + selectedAccount?.cantonParty
+                    : 'address/' + selectedAccount?.address
+                }`.replace('//', '/')
               )
             "
             class="ion-text-wrap"
@@ -155,8 +168,8 @@
         <p v-else>
           RPC performance: {{ Math.trunc(rpcPerformance.performance) }}ms -
           <span style="color: red"
-            >RPC connection is slow or dead please check internet or replace your RPC
-            URL</span
+            >RPC connection is slow or dead please check internet or replace
+            your RPC URL</span
           >
         </p>
       </ion-item>
@@ -166,7 +179,7 @@
       >
         <p class="blink-loading">Loading RPC pefromance...</p>
       </ion-item>
-<!-- 
+      <!-- 
       <ion-item style="margin-top: 0.3rem; margin-bottom: 0.3rem; text-align: center">
         <ion-button
           @click="goToFarcasterActions"
@@ -176,7 +189,9 @@
         >
       </ion-item> -->
 
-      <ion-item style="margin-top: 0.3rem; margin-bottom: 0.3rem; text-align: center">
+      <ion-item
+        style="margin-top: 0.3rem; margin-bottom: 0.3rem; text-align: center"
+      >
         <ion-button
           @click="goToPersonalSign"
           expand="block"
@@ -249,7 +264,8 @@
                 class="no-inner-border"
                 style="
                   padding: 0.4rem;
-                  border-bottom: 1px solid rgb(from var(--ion-color-primary) r g b / 0.2);
+                  border-bottom: 1px solid
+                    rgb(from var(--ion-color-primary) r g b / 0.2);
                 "
               >
                 <ion-radio
@@ -365,12 +381,12 @@ const accounts = ref([]) as Ref<Account[]>;
 const networks = ref({}) as Ref<Networks>;
 const accountsModal = ref(false) as Ref<boolean>;
 const networksModal = ref(false) as Ref<boolean>;
-const selectedAccount = (ref(null) as unknown) as Ref<Account>;
-const selectedNetwork = (ref(null) as unknown) as Ref<Network>;
+const selectedAccount = ref(null) as unknown as Ref<Account>;
+const selectedNetwork = ref(null) as unknown as Ref<Network>;
 const toastState = ref(false);
 const settings = ref({}) as Ref<Awaited<ReturnType<typeof getSettings>>>;
 const rpcPerformance = ref({ performance: 0 }) as Ref<{ performance: number }>;
-const isCanton = ref(false)
+const isCanton = ref(false);
 const networkSearchBar = ref<InstanceType<typeof IonSearchbar> | null>(null);
 
 const getToastRef = () => toastState;
@@ -397,21 +413,36 @@ const loadData = () => {
   const pSelectedAccount = getSelectedAccount();
   const pSelectedNetwork = getSelectedNetwork();
   const pSettings = getSettings();
-  Promise.all([pAccounts, pNetworks, pSelectedAccount, pSelectedNetwork, pSettings]).then(
-    (res) => {
-      accounts.value = res[0];
-      networks.value = res[1];
-      filtredNetworks.value = res[1];
-      selectedAccount.value = res[2];
-      selectedNetwork.value = res[3];
-      
-      settings.value = res[4];
-      loading.value = false;
-      if(selectedNetwork.value.chainId === 31337){
-        isCanton.value = true
-      }
+  Promise.all([
+    pAccounts,
+    pNetworks,
+    pSelectedAccount,
+    pSelectedNetwork,
+    pSettings,
+  ]).then((res) => {
+    accounts.value = res[0];
+    networks.value = res[1];
+
+    const networksObj = res[1];
+    const networksArray = Object.values(networksObj);
+
+    // Sort with Canton first
+    networksArray.sort((a: any, b: any) => {
+      if (a.chainId === 31337) return -1;
+      if (b.chainId === 31337) return 1;
+      return 0;
+    });
+
+    filtredNetworks.value = networksArray;
+    selectedAccount.value = res[2];
+    selectedNetwork.value = res[3];
+
+    settings.value = res[4];
+    loading.value = false;
+    if (selectedNetwork.value.chainId === 31337) {
+      isCanton.value = true;
     }
-  );
+  });
 
   loadRPCPerformance();
 };
@@ -444,8 +475,8 @@ const changeSelectedNetwork = async (chainId: number) => {
       Object.assign({ [chainId]: networks.value[chainId] }, networks.value)
     );
     selectedNetwork.value = networks.value[chainId];
-    if(selectedNetwork.value.chainId === 31337){
-      isCanton.value = true
+    if (selectedNetwork.value.chainId === 31337) {
+      isCanton.value = true;
     }
     triggerListener("chainChanged", numToHexStr(chainId));
   }
@@ -459,16 +490,23 @@ const changeSelectedNetwork = async (chainId: number) => {
 const searchNetwork = (e: any) => {
   const text = e.target.value;
   if (text) {
-    const filtred = Object.keys(networks.value).reduce((acc: Networks, key: string) => {
-      if (
-        networks.value[Number(key)].name.toLowerCase().includes(text.toLowerCase()) ||
-        networks.value[Number(key)].rpc.toLowerCase().includes(text.toLowerCase()) ||
-        networks.value[Number(key)].chainId.toString().includes(text)
-      ) {
-        acc[Number(key)] = networks.value[Number(key)];
-      }
-      return acc;
-    }, {} as Networks);
+    const filtred = Object.keys(networks.value).reduce(
+      (acc: Networks, key: string) => {
+        if (
+          networks.value[Number(key)].name
+            .toLowerCase()
+            .includes(text.toLowerCase()) ||
+          networks.value[Number(key)].rpc
+            .toLowerCase()
+            .includes(text.toLowerCase()) ||
+          networks.value[Number(key)].chainId.toString().includes(text)
+        ) {
+          acc[Number(key)] = networks.value[Number(key)];
+        }
+        return acc;
+      },
+      {} as Networks
+    );
     filtredNetworks.value = filtred;
   } else {
     filtredNetworks.value = networks.value;
