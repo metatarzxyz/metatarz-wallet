@@ -1,4 +1,10 @@
-# ![CLW LOGO](/public/assets/extension-icon/wallet_16.png?raw=true "CLW LOGO") Metatarz EVM wallet
+# Metatarz EVM wallet
+
+[![b.png](https://i.postimg.cc/L5qGRKxL/b.png)](https://postimg.cc/4HgWbMkx)
+
+
+
+==== START ORIGINAL README.md ==== 
 
 ## Description
 
@@ -15,7 +21,7 @@ For more info, you can check [docs website](https://metatarz-wallet.flashsoft.eu
 ## How to Build from Github
 
 ```bash
-git clone https://github.com/andrei0x309/metatarz-wallet.git
+git clone https://github.com/metatarzxyz/metatarz-wallet.git
 cd metatarz-wallet
 bun install
 bun run build # will build extension with chromium manifest
@@ -72,3 +78,6 @@ https://github.com/user-attachments/assets/4f7d267a-7410-43cf-b3bd-0256f1ccc954
 [LICENSE.md](LICENSE.md)
 
 [PRIVACY_POLICY.md](PRIVACY_POLICY.md)
+
+
+==== END ORIGINAL README.md ==== 
