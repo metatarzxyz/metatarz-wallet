@@ -1,6 +1,6 @@
-# Metatarz EVM wallet
+# Metatarz wallet
 
-[![b.png](https://i.postimg.cc/L5qGRKxL/b.png)](https://postimg.cc/4HgWbMkx)
+[![banner.png](https://i.postimg.cc/9fJdWg8L/banner.png)](https://postimg.cc/Z9vBHHhN)
 
 
 
