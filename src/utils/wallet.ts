@@ -31,6 +31,10 @@ export const getOptimismProvider = async () => {
     return new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
 }
 
+export const getCantonProvider = async () => {
+    const network = mainNets[31337]
+    return new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
+}
 const convertReceipt = (receipt: ethers.TransactionReceipt | null) => {
     if(!receipt) return null
     const newReceipt = {...receipt} as any
@@ -109,6 +113,12 @@ export const signTypedData = async (msg: string) => {
 export const getBalance = async () =>{
     const account = await getSelectedAccount()
     const { provider } = await getCurrentProvider()
+    return await provider.getBalance(account.address)    
+}
+
+export const getCantonBalance = async () =>{
+    const account = await getSelectedAccount()
+    const { provider } = await getCantonProvider()
     return await provider.getBalance(account.address)    
 }
 

@@ -170,7 +170,7 @@ import type {
   Network,
   UniSwapPortfolioResponse,
 } from "@/extension/types";
-import { formatNumber, getBalance, getCurrentProvider } from "@/utils/wallet";
+import { formatNumber, getBalance, getCantonBalance, getCantonProvider} from "@/utils/wallet";
 import ArrowDown from "@/components/icons/ArrowDown.vue";
 import ArrowUp from "@/components/icons/ArrowUp.vue";
 import { copyOutline } from "ionicons/icons";
@@ -290,7 +290,7 @@ onIonViewWillEnter(async () => {
   const cantoncoindinusd = prices[chainIdToPriceId(31337)]?.usd ?? 1;
   const bitcoininusd = prices['bitcoin']?.usd ?? 1
 
-  const cantonBalance = Number(formatEther((await getBalance()).toString()));
+  const cantonBalance = Number(formatEther((await getCantonBalance()).toString()));
 
   const cantonEntry = {
     id: "canton-native-balance",
@@ -299,7 +299,7 @@ onIonViewWillEnter(async () => {
     token: {
       id: "canton-native",
       address: "native",
-      chain: "Canton",
+      chain: "CANTON",
       symbol: "CC",
       name: "Canton Network",
       decimals: 9,
@@ -337,7 +337,7 @@ onIonViewWillEnter(async () => {
 ];
 
   //fetch cbtc balance
-  const provider = (await getCurrentProvider()).provider;
+  const provider = (await getCantonProvider()).provider;
 
   const tokenAddress = cantonTokens[2].address
 
@@ -378,7 +378,7 @@ onIonViewWillEnter(async () => {
     token: {
       id: "canton-cbtc-native",
       address: "native",
-      chain: "Canton",
+      chain: "CANTON",
       symbol: "CBTC",
       name: "Canton wrapped Bitcoin",
       decimals: 9,

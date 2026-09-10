@@ -174,6 +174,10 @@ chrome.runtime.onSuspend.addListener(() => {
     }
 })
 
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((error) => console.error(error));
+
 async function pasteAddress () {
     const currentAddress = (await (window as any).ethereum?.request({
         method: 'eth_accounts',

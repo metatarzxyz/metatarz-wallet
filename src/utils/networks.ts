@@ -44,7 +44,7 @@ export const mainNets: {[key: number]: Network} = {
     },
     137: {
         name: 'Polygon Mainnet',
-        rpc: 'https://polygon-rpc.com',
+        rpc: 'https://polygon.drpc.org',
         chainId: 137,
         explorer: 'https://polygonscan.com',
         icon:'polygon.webp',

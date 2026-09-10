@@ -299,8 +299,8 @@ const onAddAccount = async () => {
     savePromises.push(saveAccount(accountData));
     
     // If no accounts exist yet, also set as selected
-    if (accounts?.length === 0) {
-      savePromises.push(saveSelectedAccount(accountData));
+    if (!accounts || accounts.length === 0) {
+      await saveSelectedAccount(accountData);
     }
     
     await Promise.all(savePromises);
