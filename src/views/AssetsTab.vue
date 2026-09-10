@@ -113,7 +113,7 @@
               <ion-label class="flex-col flex">
                 <div class="flex">
                   <b>{{ token?.token?.symbol }}:</b>
-                  {{ formatNumber(token?.quantity, 4) }}
+                  {{ formatNumber(token?.quantity, 9) }}
                 </div>
                 <div class="flex">
                   <span style="font-size: 0.8rem; opacity: 0.7">{{
@@ -368,7 +368,7 @@ onIonViewWillEnter(async () => {
   }
 
   const formattedBalance = Number(formatUnits(balance, 18));
-  const cbtcBalance = Math.round(formattedBalance * 10000) / 10000;
+  const cbtcBalance = Math.round(formattedBalance * 10**9) / 10**9;
 
 
   const cantonCbtcEntry = {
