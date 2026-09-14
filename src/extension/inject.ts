@@ -420,42 +420,72 @@ const listener =  function(event: any) {
         if((eventDataData?.listener ?? 'x') in listeners ) {
             try {
                 const listenerName = eventDataData.listener as ('accountsChanged' | 'connect' | 'disconnect' | 'chainChanged')
-                if( listenerName === 'connect' && eventDataData) {
-                    (<any>eth).networkVersion = String(parseInt(eventDataDataData?.chainId ?? "0x89", 16));
-                    (<any>eth).chainId = eventDataDataData?.chainId ?? '0x89';
-                    (<any>eth).selectedAddress = eventDataData?.address?.[0] ?? null;
-                    (<any>eth).accounts = eventDataData.address?.[0] ? [eventDataData.address?.[0]] : [];
-                    (<any>eth)._state.accounts = (<any>eth).accounts;
-                    (<any>eth)._state.isConnected = true;
-                } else if( listenerName === 'chainChanged' ) {
-                    (<any>eth).networkVersion = String(parseInt(eventDataDataData ?? "0x89", 16));
-                    (<any>eth).chainId = eventDataData ?? '0x89';
-                } else if ( listenerName === 'accountsChanged' ) {
-                    (<any>eth).accounts = eventDataData?.[0] ? [eventDataData?.[0]] : [];
-                    (<any>eth)._state.accounts = (<any>eth).accounts;
-                    (<any>eth).selectedAddress = eventDataData?.[0] ?? '';
-                } else if ( listenerName === 'disconnect' ) {
-                    clearListeners();
-                    (<any>eth)._state.isConnected = false;
-                    (<any>eth).selectedAddress = null;
-                    (<any>eth).accounts = [];
-                    (<any>eth)._state.accounts = (<any>eth).accounts;
-                    (<any>eth).networkVersion = null;
-                    (<any>eth).chainId = null;
-                    (<any>eth).initialConnect = () => {}
+            
+                const normalizeAccounts = (v: any): string[] => {
+                    if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string')
+                    if (typeof v === 'string' && v.length > 0) return [v]
+                    if (v && typeof v === 'object' && typeof v.address === 'string') return [v.address]
+                    return []
                 }
-
-                listeners[listenerName].forEach(pageListener => {
-                    pageListener(eventDataData)
-                });
-                
-                listeners.once[listenerName].forEach(pageListener => {
-                    pageListener(eventDataData)
-                    listeners.once[listenerName].delete(pageListener)
-                });
+            
+                const rawAccounts =
+                    listenerName === 'connect'
+                        ? eventDataDataData?.address ?? eventDataData?.address ?? eventDataData?.data?.address
+                        : eventDataDataData ?? eventDataData
+            
+                const accounts = normalizeAccounts(rawAccounts)
+            
+                if (listenerName === 'connect' && eventDataData) {
+                    const cid = eventDataDataData?.chainId ?? eventDataData?.chainId ?? '0x89'
+                    ;(<any>eth).networkVersion = String(parseInt(cid, 16))
+                    ;(<any>eth).chainId = cid
+                    ;(<any>eth).selectedAddress = accounts[0] ?? null
+                    ;(<any>eth).accounts = accounts
+                    ;(<any>eth)._state.accounts = accounts
+                    ;(<any>eth)._state.isConnected = true
+                } else if (listenerName === 'chainChanged') {
+                    const cid = eventDataDataData ?? eventDataData ?? '0x89'
+                    ;(<any>eth).networkVersion = String(parseInt(cid, 16))
+                    ;(<any>eth).chainId = cid
+                } else if (listenerName === 'accountsChanged') {
+                    ;(<any>eth).accounts = accounts
+                    ;(<any>eth)._state.accounts = accounts
+                    ;(<any>eth).selectedAddress = accounts[0] ?? ''
+                } else if (listenerName === 'disconnect') {
+                    clearListeners()
+                    ;(<any>eth)._state.isConnected = false
+                    ;(<any>eth).selectedAddress = null
+                    ;(<any>eth).accounts = []
+                    ;(<any>eth)._state.accounts = []
+                    ;(<any>eth).networkVersion = null
+                    ;(<any>eth).chainId = null
+                    ;(<any>eth).initialConnect = () => {}
+                }
+            
+                if (listenerName === 'accountsChanged') {
+                    listeners[listenerName].forEach(pageListener => {
+                        pageListener(accounts)         // ← wagmi gets string[]
+                    })
+                    listeners.once[listenerName].forEach(pageListener => {
+                        pageListener(accounts)
+                        listeners.once[listenerName].delete(pageListener)
+                    })
+                } else {
+                    const payload = listenerName === 'connect'
+                        ? { chainId: (<any>eth).chainId, accounts }
+                        : listenerName === 'chainChanged'
+                            ? (<any>eth).chainId
+                            : eventDataData
+                    listeners[listenerName].forEach(pageListener => {
+                        pageListener(payload)
+                    })
+                    listeners.once[listenerName].forEach(pageListener => {
+                        pageListener(payload)
+                        listeners.once[listenerName].delete(pageListener)
+                    })
+                }
             } catch (e) {
-                // console.info(e)
-                // ignore
+                console.warn('inject listener error', e)
             }
         }
     }
