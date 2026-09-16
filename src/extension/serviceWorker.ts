@@ -723,7 +723,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                         try {
                             const network = await getSelectedNetwork()
 
-                            const isCanton = network.chainId === 31337
+                            const isCanton = network.chainId === 31337 || network.chainId === 30337
                             let tx
                             if(isCanton){
                                 //submit prepare, execute canton flow

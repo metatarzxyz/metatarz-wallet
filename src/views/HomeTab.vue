@@ -84,7 +84,7 @@
         </ion-item>
         <ion-item
           v-if="
-            !loading && selectedNetwork?.explorer && selectedAccount?.address
+            !loading && selectedNetwork?.explorer && (isCanton ? selectedAccount?.cantonParty : selectedAccount?.address)
           "
         >
           <ion-button
@@ -439,7 +439,7 @@ const loadData = () => {
 
     settings.value = res[4];
     loading.value = false;
-    if (selectedNetwork.value.chainId === 31337) {
+    if (selectedNetwork.value.chainId === 31337 || selectedNetwork.value.chainId === 30337) {
       isCanton.value = true;
     }
   });
@@ -475,7 +475,7 @@ const changeSelectedNetwork = async (chainId: number) => {
       Object.assign({ [chainId]: networks.value[chainId] }, networks.value)
     );
     selectedNetwork.value = networks.value[chainId];
-    if (selectedNetwork.value.chainId === 31337) {
+    if (selectedNetwork.value.chainId === 31337 || selectedNetwork.value.chainId === 30337) {
       isCanton.value = true;
     }
     triggerListener("chainChanged", numToHexStr(chainId));

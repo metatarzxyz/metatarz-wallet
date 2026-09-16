@@ -34,7 +34,7 @@
           <p style="font-size: 0.7rem">{{ selectedAccount?.address }}</p>
           <ion-icon style="margin-left: 0.5rem" :icon="copyOutline"></ion-icon>
         </ion-item>
-        <ion-item
+        <ion-item v-if="selectedAccount?.cantonParty"
           button
           @click="copyText(selectedAccount?.cantonParty || '', getToastRef())"
         >
@@ -170,7 +170,7 @@ import type {
   Network,
   UniSwapPortfolioResponse,
 } from "@/extension/types";
-import { formatNumber, getBalance, getCantonBalance, getCantonProvider} from "@/utils/wallet";
+import { formatNumber, getBalance, getCantonBalance, getCantonNetworkProvider} from "@/utils/wallet";
 import ArrowDown from "@/components/icons/ArrowDown.vue";
 import ArrowUp from "@/components/icons/ArrowUp.vue";
 import { copyOutline } from "ionicons/icons";
@@ -271,7 +271,7 @@ onIonViewWillEnter(async () => {
     return;
   }
 
-  if (selectedNetwork.value.chainId === 31337) {
+  if (selectedNetwork.value.chainId === 31337 || selectedNetwork.value.chainId === 30337) {
     isCanton.value = true;
   } else {
     isCanton.value = false;
@@ -299,7 +299,7 @@ onIonViewWillEnter(async () => {
     token: {
       id: "canton-native",
       address: "native",
-      chain: "CANTON",
+      chain: `${selectedNetwork.value.chainId === 30337 ? "CANTON-TESTNET" : "CANTON"}`,
       symbol: "CC",
       name: "Canton Network",
       decimals: 9,
@@ -337,7 +337,7 @@ onIonViewWillEnter(async () => {
 ];
 
   //fetch cbtc balance
-  const provider = (await getCantonProvider()).provider;
+  const provider = (await getCantonNetworkProvider()).provider;
 
   const tokenAddress = cantonTokens[2].address
 
@@ -378,7 +378,7 @@ onIonViewWillEnter(async () => {
     token: {
       id: "canton-cbtc-native",
       address: "native",
-      chain: "CANTON",
+      chain: `${selectedNetwork.value.chainId === 30337 ? "CANTON-TESTNET" : "CANTON"}`,
       symbol: "CBTC",
       name: "Canton wrapped Bitcoin",
       decimals: 9,

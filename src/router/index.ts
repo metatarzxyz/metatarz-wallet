@@ -94,6 +94,10 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@/views/SendToken.vue'),
       },
       {
+        path: 'manage-token',
+        component: () => import('@/views/ManageTokensTab.vue'),
+      },
+      {
         path: 'deposit-token',
         component: () => import('@/views/DepositToken.vue'),
       },

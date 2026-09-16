@@ -11,6 +11,7 @@ export const noFoundNetworks = {
         10, // Optimism Mainnet
         1, // Ethereum Main
         56, // Binance Smart Chain
+        30337 // Canton Testnet
     ]
 }
 
@@ -162,6 +163,15 @@ export const mainNets: {[key: number]: Network} = {
 }
 
 export const testNets = {
+    30337: {
+        name: 'Canton Testnet',
+        rpc: 'https://canton-testnet.rpc.wallet.metatarz.xyz',
+        chainId: 30337,
+        explorer: 'https://testnet.ccview.io',
+        icon: 'canton.webp',
+        symbol: 'CC',
+        priceId: 'canton-network',
+    },
     11155111: {
         name: 'TESTNET Ethereum Sepolia',
         rpc: 'https://ethereum-sepolia-rpc.publicnode.com',

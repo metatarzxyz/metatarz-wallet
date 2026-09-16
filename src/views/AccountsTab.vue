@@ -43,7 +43,7 @@
           &nbsp;
           <ion-icon class="copy-icon" :icon="copyOutline"></ion-icon>
         </ion-item>
-        <ion-item
+        <ion-item v-if="account?.cantonParty"
           class="no-inner-border"
           style="cursor: pointer"
           @click="copyText(account.cantonParty || '', getToastRef())"

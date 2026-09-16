@@ -366,7 +366,7 @@ onIonViewWillEnter(async () => {
       return;
     }
 
-    if (selectedNetwork.value.chainId === 31337) {
+    if (selectedNetwork.value.chainId === 31337 || selectedNetwork.value.chainId === 30337) {
       isCanton.value = true;
     } else {
       isCanton.value = false;
@@ -438,7 +438,7 @@ const balanceOfERC20 = async () => {
       // Format with 18 decimals (Canton tokens use 18 decimals)
       const formattedBalance = Number(formatUnits(balance, 18));
       // Round to 4 decimal places for clean UI
-      currentBalanceERC20.value = Math.round(formattedBalance * 10000) / 10000;
+      currentBalanceERC20.value = Math.round(formattedBalance * 10**9) / 10**9;
       return currentBalanceERC20.value;
     }
 

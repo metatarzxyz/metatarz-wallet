@@ -41,7 +41,7 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
     const chainId = network.chainId
 
     //only for Canton
-    if (chainId !== 31337) {
+    if (chainId !== 31337 && chainId !== 30337) {
         return
     }
 
@@ -50,10 +50,14 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
     const signature = await signMsgWithPk(message, pk ? pk : account?.pk)
 
 
-    const prepareResponse = await callPrepare(url, { message, sig: signature, ...(type === 'transfer' ? { to: params?.to, amount: params?.value, 
-        token: params?.token,
-        //token: "Amulet", // TODO: replace
-        memo: params?.memo } : {}), type })
+    const prepareResponse = await callPrepare(url, {
+        message, sig: signature, ...(type === 'transfer' ? {
+            to: params?.to, amount: params?.value,
+            token: params?.token,
+            //token: "Amulet", // TODO: replace
+            memo: params?.memo
+        } : {}), type
+    })
 
 
     const txHash = prepareResponse?.transaction_hash
@@ -86,6 +90,11 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
 
 
 // call register + preapprove (prepare + execute) endpoints
+
+export const sendPreapproval = async (type: string, party: string, pk: string,) => {
+    await sendCantonTransaction({}, type, party, pk)
+
+}
 export const registerWallet = async (pk: string) => {
     const wallet = new ethers.Wallet(pk)
 
@@ -99,7 +108,7 @@ export const registerWallet = async (pk: string) => {
     const chainId = network.chainId
 
     //only for Canton
-    if (chainId === 31337) {
+    if (chainId === 31337 || chainId === 30337) {
 
         //need signature + message
 
@@ -107,7 +116,7 @@ export const registerWallet = async (pk: string) => {
 
         const signature = await signMsgWithPk(msg, pk)
 
-        const data: { user_exists: boolean, party: string, fingerprint: string, topology_hash: string, public_key_fingerprint: string, registration_token: string, error: string, code:  number}
+        const data: { user_exists: boolean, party: string, fingerprint: string, topology_hash: string, public_key_fingerprint: string, registration_token: string, error: string, code: number }
             = await callRegisterTopology(url, {
                 signature,
                 message: msg,
@@ -116,7 +125,7 @@ export const registerWallet = async (pk: string) => {
             })
         //fetch /register/prepare-topology
 
-        if(data && data?.error && data?.code==403){
+        if (data && data?.error && data?.code == 403) {
             return {
                 error: data?.error
             }
@@ -124,41 +133,38 @@ export const registerWallet = async (pk: string) => {
 
 
 
-        if (data?.user_exists) {
-            return {
+        if (!data?.user_exists) {
 
-                party: data?.party,
-                fingerprint: data?.fingerprint
+            const topologySignature = await signHashDER(data?.topology_hash, pk)
 
+            const registerData = await callRegister(url, {
+                signature,
+                message: msg,
+                key_mode: 'external',
+                //used for verifyDER server side
+                topology_signature: topologySignature,
+                transaction_hash: data?.topology_hash,
+                canton_public_key: publicKey,
+                public_key_fingerprint: data?.public_key_fingerprint,
+                registration_token: data?.registration_token
+            })
+
+            return  {
+
+                party: registerData?.party,
+                fingerprint: registerData?.fingerprint
+    
             }
-        }
-
-        const topologySignature = await signHashDER(data?.topology_hash, pk)
-
-        const registerResponse = await callRegister(url, {
-            signature,
-            message: msg,
-            key_mode: 'external',
-            //used for verifyDER server side
-            topology_signature: topologySignature,
-            transaction_hash: data?.topology_hash,
-            canton_public_key: publicKey,
-            public_key_fingerprint: data?.public_key_fingerprint,
-            registration_token: data?.registration_token
-        })
-
-
-
-        if (registerResponse && !registerResponse.user_exists) {
-            //send preapproval transaction
-            await sendCantonTransaction({}, "preapproval", registerResponse?.party, pk)
-            await sendCantonTransaction({}, "preapproval2", registerResponse?.party, pk)
 
         }
+        
 
+        return {
 
+            party: data?.party,
+            fingerprint: data?.fingerprint
 
-        return registerResponse
+        }
 
     }
 
@@ -185,7 +191,7 @@ async function callRegister(url: string, params: any) {
             return
         }
     }
-    
+
 
     return await response.json();
 }
@@ -250,11 +256,11 @@ async function callRegisterTopology(url: string, params: any) {
         console.error(`HTTP error! status: ${response.status}`);
 
         //user not whitelisted
-        if(response.status !== 403){
+        if (response.status !== 403) {
             return
         }
     }
-    
+
 
     return await response.json();
 }

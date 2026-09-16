@@ -156,7 +156,6 @@ import { useRoute } from "vue-router";
 import type { Account, Settings } from "@/extension/types";
 import UnlockModal from "@/views/UnlockModal.vue";
 import { encrypt, getCryptoParams } from "@/utils/webCrypto";
-import { registerWallet } from "@/utils/canton";
 
 import { clipboardOutline } from "ionicons/icons";
 import { getFromMnemonic, getRandomPk } from "@/utils/wallet";
@@ -279,18 +278,9 @@ const onAddAccount = async () => {
       cryptoParams = await getCryptoParams(pass);
     }
     
-    // 5. Register wallet with Canton
-    loading.value = true;
-    const cantonData = await registerWallet(pk.value);
-    
-    if (cantonData?.error) {
-      alertMsg.value = 'Failed to register Canton wallet: ' + cantonData.error;
-      alertOpen.value = true;
-      return;
-    }
     
     // 6. Prepare account data
-    const accountData = await buildAccountData(wallet, cryptoParams, cantonData);
+    const accountData = await buildAccountData(wallet, cryptoParams);
     
     // 7. Save account(s)
     const savePromises = [];
@@ -357,8 +347,7 @@ const getSettingsData = async (): Promise<Settings | undefined> => {
 
 const buildAccountData = async (
   wallet: ethers.Wallet,
-  cryptoParams: any | null,
-  cantonData: any | null
+  cryptoParams: any | null
 ): Promise<Account> => {
   const baseAccount: Partial<Account> = {
     address: wallet.address,
@@ -373,11 +362,6 @@ const buildAccountData = async (
     baseAccount.encPk = "";
   }
   
-  // Handle Canton data
-  if (cantonData) {
-    baseAccount.cantonParty = cantonData.party;
-    baseAccount.cantonFingerprint = cantonData.fingerprint;
-  }
   
   return baseAccount as Account;
 };

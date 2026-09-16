@@ -1,12 +1,24 @@
 export interface Network {
-    name: string
-    chainId: number
-    rpc: string
-    symbol?: string
-    icon?: string
-    priceId?: string
-    explorer?: string
-}
+    name: string;
+    chainId: number;
+    rpc: string;
+    symbol?: string;
+    icon?: string;
+    priceId?: string;
+    explorer?: string;
+    tokens?: Record<string, CantonConfig>;
+  }
+  
+  export interface CantonConfig {
+      canton: {
+        cc?:    { activated: boolean };
+        cbtc?:  { activated: boolean };
+        ceth?:  { activated: boolean };
+        usdcx?: { activated: boolean };
+        handl?: { activated: boolean };
+      };
+};
+  
 
 export interface Contact {
     name: string
@@ -18,6 +30,7 @@ export interface Account extends Contact {
     encPk: string
     cantonParty?: string
     cantonFingerprint?: string
+
 }
 
 
@@ -42,8 +55,8 @@ export interface ProviderRpcError extends Error {
     message: string
     code: number
     data?: unknown
-  }
-  
+}
+
 export interface Price {
     [key: string]: number
 }
@@ -79,17 +92,17 @@ export interface HistoryItem {
 }
 
 export interface ContractAction {
-        name: string
-        contract: string
-        abi: string
-        functionName: string
-        params: any[]
+    name: string
+    contract: string
+    abi: string
+    functionName: string
+    params: any[]
 }
 
 export interface ContractActions {
-    [key: string] : ContractAction
+    [key: string]: ContractAction
 }
- 
+
 export interface UniSwapPortfolioResponse {
     data: {
         portfolios: {
@@ -152,12 +165,12 @@ export interface UniSwapPortfolioResponse {
 }
 
 export type AlchemyAssetChange = {
-     assetType: 'NATIVE' | 'ERC20' | 'ERC721' | 'ERC1155';
-     changeType: string,
-     from: string,
-     to: string,
-     amount: string,
-     name: string,
-     logo: string,
-     symbol: string,
+    assetType: 'NATIVE' | 'ERC20' | 'ERC721' | 'ERC1155';
+    changeType: string,
+    from: string,
+    to: string,
+    amount: string,
+    name: string,
+    logo: string,
+    symbol: string,
 };
