@@ -175,7 +175,8 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Canton Ethereum",
       logoUrl: getUrl("assets/chain-icons/canton-ceth.webp"),
       activated: cantonNetworkTokens?.ceth?.activated || false,
-      enabled: true
+      //disabled on testnet
+      enabled: selectedNetwork.value.chainId === 30337 ? false : true
     },
     {
       address: "0xDE40000000000000000000000000000000000001",
