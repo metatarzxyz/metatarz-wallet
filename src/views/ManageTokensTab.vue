@@ -73,7 +73,7 @@
                 :disabled="
                   (token.symbol !== 'CC' && !tokens[0]?.activated) ||
                   token.activated ||
-                  token.activating
+                  token.activating || !token.enabled
                 "
                 @click="activateToken(token)"
               >
@@ -159,6 +159,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Amulet",
       logoUrl: getUrl("assets/chain-icons/canton.webp"),
       activated: cantonNetworkTokens?.cc?.activated || false,
+      enabled: true
     },
     {
       address: "0xDE60000000000000000000000000000000000001",
@@ -166,6 +167,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Canton wrapped Bitcoin",
       logoUrl: getUrl("assets/chain-icons/canton-cbtc.webp"),
       activated: cantonNetworkTokens?.cbtc?.activated || false,
+      enabled: true
     },
     {
       address: "0xDE70000000000000000000000000000000000001",
@@ -173,6 +175,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Canton Ethereum",
       logoUrl: getUrl("assets/chain-icons/canton-ceth.webp"),
       activated: cantonNetworkTokens?.ceth?.activated || false,
+      enabled: true
     },
     {
       address: "0xDE40000000000000000000000000000000000001",
@@ -180,6 +183,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Canton USDC",
       logoUrl: getUrl("assets/chain-icons/canton-usdcx.webp"),
       activated: cantonNetworkTokens?.usdcx?.activated || false,
+      enabled: false
     },
     {
       address: "0xDE50000000000000000000000000000000000001",
@@ -187,6 +191,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "HANDL",
       logoUrl: getUrl("assets/chain-icons/canton-handl.webp"),
       activated: cantonNetworkTokens?.handl?.activated || false,
+      enabled: false
     },
   ];
 };

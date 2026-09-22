@@ -473,8 +473,15 @@ onIonViewWillEnter(async () => {
     insufficientBalance.value = true;
   }
   const prices = await pGetPrices;
+
+  if (params?.token === 'CBTC'){
+    dollarPrice.value =  prices['bitcoin']?.usd ?? 0;
+
+  }else{
   dollarPrice.value =
     prices[chainIdToPriceId(selectedNetwork.value?.chainId ?? 0)]?.usd ?? 0;
+  }
+
   await newGasData();
   loading.value = false;
 

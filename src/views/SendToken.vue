@@ -592,7 +592,7 @@ const promptTransactionERC20 = async () => {
         to: sendTo.value,
         token: cantonTokens.find((t) => t.address === erc20.value)?.symbol,
         memo: memo.value,
-        value,
+        value: parseEther(erc20Amount.value.toString()).toString(),
         nonce,
         gasLimit: "0x0",
         gasPrice: "0x0",

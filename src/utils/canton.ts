@@ -59,29 +59,43 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
         } : {}), type
     })
 
+    if (prepareResponse && prepareResponse?.code){
+        const code = prepareResponse?.code
 
-    const txHash = prepareResponse?.transaction_hash
+        if(code !== 409){
+            throw new Error('Transaction failed. Try again later')
+        }
 
-    const txHashSig = await signHashDER(txHash, pk ? pk : account?.pk)
+
+    }
+    if (prepareResponse && prepareResponse?.transaction_hash) {
 
 
-    const executeResponse = await callExecute(url, {
-        message,
-        sig: signature,
-        signed_by: party ? party.split('::')[1] : account?.cantonParty?.split('::')[1],
-        signature: txHashSig,
-        transfer_id: prepareResponse?.transfer_id,
-        transaction_hash: txHash,
-        public_key: wallet.signingKey.compressedPublicKey,
-        type,
-    })
+        const txHash = prepareResponse?.transaction_hash
 
-    if (!executeResponse) {
-        throw new Error('Transaction failed. Try again later')
+        const txHashSig = await signHashDER(txHash, pk ? pk : account?.pk)
+
+
+        const executeResponse = await callExecute(url, {
+            message,
+            sig: signature,
+            signed_by: party ? party.split('::')[1] : account?.cantonParty?.split('::')[1],
+            signature: txHashSig,
+            transfer_id: prepareResponse?.transfer_id,
+            transaction_hash: txHash,
+            public_key: wallet.signingKey.compressedPublicKey,
+            type,
+        })
+
+        if (!executeResponse) {
+            throw new Error('Transaction failed. Try again later')
+        }
+
+
+        return { hash: executeResponse?.update_id ?? txHash } as TransactionResponse
+
     }
 
-
-    return { hash: executeResponse?.update_id ?? txHash } as TransactionResponse
 
 
 
@@ -149,15 +163,15 @@ export const registerWallet = async (pk: string) => {
                 registration_token: data?.registration_token
             })
 
-            return  {
+            return {
 
                 party: registerData?.party,
                 fingerprint: registerData?.fingerprint
-    
+
             }
 
         }
-        
+
 
         return {
 
@@ -209,7 +223,6 @@ async function callPrepare(url: string, params: any) {
 
     if (!response.ok) {
         console.error(`HTTP error! status: ${response.status}`);
-        return
     }
 
     return await response.json();
