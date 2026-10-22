@@ -48,8 +48,8 @@ export const getCantonProvider = async () => {
 
 export const getCantonTestnetProvider = async () => {
     const networks = await getNetworks()
-    const network = networks[31337]
-    
+    const network = networks[30337]
+
     if (provider) {
         // check if the network has changed
         if (provider._getConnection().url !== network.rpc) {
