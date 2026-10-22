@@ -23,7 +23,8 @@
   "dependencies": {
     "@ionic/vue": "8.7.2",
     "@ionic/vue-router": "8.7.2",
-    "@noble/curves": "^2.2.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "@noble/secp256k1": "^3.1.0",
     "core-js": "^3.45.0",
     "ethers": "^6.15.0",

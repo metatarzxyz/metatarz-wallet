@@ -1,8 +1,8 @@
-import { getSelectedAccount, getSelectedNetwork, numToHexStr } from '@/utils/platform';
+import { getNetworks, getSelectedAccount, getSelectedNetwork, numToHexStr } from '@/utils/platform';
 import { ethers } from "ethers"
 import { mainNets, testNets } from '@/utils/networks';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
-import { sha256 } from '@noble/hashes/sha256';
+import { sha256 } from "@noble/hashes/sha2.js";
 
 
 
@@ -32,13 +32,33 @@ export const getOptimismProvider = async () => {
 }
 
 export const getCantonProvider = async () => {
-    const network = mainNets[31337]
-    return new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
+    const networks = await getNetworks()
+    const network = networks[31337]
+
+    if (provider) {
+        // check if the network has changed
+        if (provider._getConnection().url !== network.rpc) {
+            provider = new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
+        }
+        return provider
+    }
+    provider = new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
+    return provider
 }
 
 export const getCantonTestnetProvider = async () => {
-    const network = testNets[30337]
-    return new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
+    const networks = await getNetworks()
+    const network = networks[31337]
+    
+    if (provider) {
+        // check if the network has changed
+        if (provider._getConnection().url !== network.rpc) {
+            provider = new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
+        }
+        return provider
+    }
+    provider = new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
+    return provider
 }
 const convertReceipt = (receipt: ethers.TransactionReceipt | null) => {
     if (!receipt) return null

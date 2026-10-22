@@ -34,7 +34,8 @@
           <p style="font-size: 0.7rem">{{ selectedAccount?.address }}</p>
           <ion-icon style="margin-left: 0.5rem" :icon="copyOutline"></ion-icon>
         </ion-item>
-        <ion-item v-if="selectedAccount?.cantonParty"
+        <ion-item
+          v-if="selectedAccount?.cantonParty"
           button
           @click="copyText(selectedAccount?.cantonParty || '', getToastRef())"
         >
@@ -94,15 +95,9 @@
                   :src="token?.token?.project?.logoUrl"
                 />
                 <img
-                  v-else-if="token?.token?.name === 'Canton Network'"
+                  v-else-if="getCantonLogo(token)"
                   :alt="token?.token?.name"
-                  :src="getUrl('assets/chain-icons/canton.webp')"
-                />
-
-                <img
-                  v-else-if="token?.token?.name === 'Canton wrapped Bitcoin'"
-                  :alt="token?.token?.name"
-                  :src="getUrl('assets/chain-icons/canton-cbtc.webp')"
+                  :src="getUrl(`assets/chain-icons/${getCantonLogo(token)}`)"
                 />
                 <img
                   v-else
@@ -170,14 +165,101 @@ import type {
   Network,
   UniSwapPortfolioResponse,
 } from "@/extension/types";
-import { formatNumber, getBalance, getCantonBalance, getCantonNetworkProvider} from "@/utils/wallet";
+import {
+  formatNumber,
+  getBalance,
+  getCantonBalance,
+  getCantonNetworkProvider,
+} from "@/utils/wallet";
 import ArrowDown from "@/components/icons/ArrowDown.vue";
 import ArrowUp from "@/components/icons/ArrowUp.vue";
 import { copyOutline } from "ionicons/icons";
 import BridgeIcon from "@/components/icons/Bridge.vue";
 import { formatEther, formatUnits } from "ethers";
-import { I } from "vue-router/dist/router-CWoNjPRp.mjs";
 import { chainIdToPriceId } from "@/utils/networks";
+
+type TokenBalance =
+  UniSwapPortfolioResponse["data"]["portfolios"][0]["tokenBalances"][number];
+
+type CantonAssetConfig = {
+  /** Contract address (or "native" for the chain's native coin). */
+  address: string;
+  /** Display symbol. */
+  symbol: string;
+  /** Display name. */
+  name: string;
+  /** Token decimals used for formatting the raw balance. */
+  decimals: number;
+  /** Key into the `prices` object returned by `getPrices()`. */
+  priceKey: string;
+  /** Optional fixed USD price (e.g. stablecoins). Takes precedence. */
+  fixedPrice?: number;
+  /** Optional local logo file under `assets/chain-icons/`. */
+  logoFile?: string;
+  /** Optional custom balance reader. Defaults to `balanceOf`. */
+  readBalance?: (provider: any, owner: string) => Promise<bigint>;
+};
+
+const NATIVE_CANTON: CantonAssetConfig = {
+  address: "native",
+  symbol: "CC",
+  name: "Canton Network",
+  decimals: 9,
+  priceKey: "canton",
+  logoFile: "canton.webp",
+};
+
+const CANTON_ASSETS: CantonAssetConfig[] = [
+  {
+    address: "0xDE40000000000000000000000000000000000001",
+    symbol: "USDCx",
+    name: "Canton USDC",
+    decimals: 6,
+    priceKey: "usd-coin",
+    fixedPrice: 1,
+  },
+  {
+    address: "0xDE50000000000000000000000000000000000001",
+    symbol: "HANDL",
+    name: "Handl",
+    decimals: 18,
+    priceKey: "handl",
+  },
+  {
+    address: "0xDE60000000000000000000000000000000000001",
+    symbol: "CBTC",
+    name: "Canton wrapped Bitcoin",
+    decimals: 18,
+    priceKey: "bitcoin",
+    logoFile: "canton-cbtc.webp",
+  },
+  {
+    address: "0xDE70000000000000000000000000000000000001",
+    symbol: "cETH",
+    name: "Canton Ethereum",
+    decimals: 18,
+    priceKey: "ethereum",
+    logoFile: "canton-ceth.webp",
+  },
+  {
+    address: "0xDE80000000000000000000000000000000000001",
+    symbol: "BETH",
+    name: "BETH",
+    decimals: 18,
+    priceKey: "ethereum",
+    logoFile: "canton-beth.webp",
+  },
+];
+
+/** Symbol -> local logo filename lookup used by the template. */
+const cantonLogoBySymbol: Record<string, string> = Object.fromEntries(
+  [NATIVE_CANTON, ...CANTON_ASSETS]
+    .filter((a) => a.logoFile)
+    .map((a) => [a.symbol, a.logoFile as string]),
+);
+
+const getCantonLogo = (token: any): string | null =>
+  cantonLogoBySymbol[token?.token?.symbol] ?? null;
 
 const selectedAccount = ref({}) as Ref<Account>;
 const loading = ref(true);
@@ -189,12 +271,8 @@ const getToastRef = () => toastState;
 const isCanton = ref(false);
 const selectedNetwork = ref(null) as unknown as Ref<Network>;
 
-const alltokens = ref({}) as Ref<
-  UniSwapPortfolioResponse["data"]["portfolios"][0]["tokenBalances"]
->;
-const shownTokens = ref([]) as Ref<
-  UniSwapPortfolioResponse["data"]["portfolios"][0]["tokenBalances"]
->;
+const alltokens = ref([]) as Ref<TokenBalance[]>;
+const shownTokens = ref([]) as Ref<TokenBalance[]>;
 
 const assetsValue = ref({}) as Ref<
   UniSwapPortfolioResponse["data"]["portfolios"][0]["tokensTotalDenominatedValue"]
@@ -205,6 +283,7 @@ const assetsChange = ref({}) as Ref<
 >;
 
 const UNISWAP_API_ENDPOINT = "https://interface.gateway.uniswap.org/v1/graphql";
+
 
 const getUniwapAssets = async (ownerAddress: string) => {
   const headers = {
@@ -262,194 +341,178 @@ const getUniwapAssets = async (ownerAddress: string) => {
   return res as UniSwapPortfolioResponse;
 };
 
+
+/** Default `balanceOf(owner)` reader via `eth_call`. */
+const readErc20Balance = async (
+  provider: any,
+  tokenAddress: string,
+  owner: string,
+): Promise<bigint> => {
+  const addr = owner.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  const data = `0x70a08231${addr}`;
+  const res = await provider.send("eth_call", [
+    { to: tokenAddress, data },
+    "latest",
+  ]);
+  if (!res || res === "0x" || res === "0x0") return 0n;
+  return BigInt(res);
+};
+
+/** Normalize a raw bigint balance to a human number rounded to 9 decimals. */
+const toDisplayQuantity = (raw: bigint, decimals: number): number => {
+  const asNumber = Number(formatUnits(raw, decimals));
+  if (!Number.isFinite(asNumber)) return 0;
+  return Math.round(asNumber * 1e9) / 1e9;
+};
+
+/** Build a Uniswap-shaped `TokenBalance` entry from a Canton config. */
+const buildCantonTokenEntry = (
+  cfg: CantonAssetConfig,
+  quantity: number,
+  priceUsd: number,
+  chainLabel: string,
+): TokenBalance =>
+  ({
+    id: `canton-${cfg.symbol.toLowerCase()}-balance`,
+    quantity,
+    denominatedValue: { value: +(quantity * priceUsd).toFixed(2) },
+    token: {
+      id: `canton-${cfg.symbol.toLowerCase()}-native`,
+      address: "native",
+      chain: chainLabel,
+      symbol: cfg.symbol,
+      name: cfg.name,
+      decimals: cfg.decimals,
+      standard: "NATIVE",
+      project: {
+        id: cfg.priceKey,
+        name: cfg.name,
+        logo: null,
+        safetyLevel: "verified",
+        logoUrl: null,
+        isSpam: false,
+        __typename: "Project",
+      },
+      __typename: "Token",
+    },
+    tokenProjectMarket: {
+      id: "canton-market",
+      pricePercentChange: null,
+      tokenProject: {
+        id: "canton",
+        logoUrl: null,
+        isSpam: false,
+        __typename: "TokenProject",
+      },
+      __typename: "TokenProjectMarket",
+    },
+    __typename: "TokenBalance",
+  }) as unknown as TokenBalance;
+
+/** Resolve a USD price for a config, honouring `fixedPrice`. */
+const resolvePrice = (
+  cfg: CantonAssetConfig,
+  prices: Record<string, { usd?: number } | undefined>,
+): number => {
+  if (typeof cfg.fixedPrice === "number") return cfg.fixedPrice;
+  return prices?.[cfg.priceKey]?.usd ?? 1;
+};
+
+
 onIonViewWillEnter(async () => {
+  // Reset state in case the view is re-entered.
+  loading.value = true;
+  isError.value = false;
+  noSelectedAccount.value = false;
+  noAssets.value = false;
+
   selectedAccount.value = await getSelectedAccount();
   selectedNetwork.value = await getSelectedNetwork();
+
   if (!selectedAccount.value) {
     noSelectedAccount.value = true;
     loading.value = false;
     return;
   }
 
-  if (selectedNetwork.value.chainId === 31337 || selectedNetwork.value.chainId === 30337) {
-    isCanton.value = true;
-  } else {
-    isCanton.value = false;
-  }
+  isCanton.value =
+    selectedNetwork.value.chainId === 31337 ||
+    selectedNetwork.value.chainId === 30337;
 
   const result = await getUniwapAssets(selectedAccount.value.address);
-
   if (!result) {
     isError.value = true;
     loading.value = false;
     return;
   }
 
-
   const prices = await getPrices();
-  const cantoncoindinusd = prices[chainIdToPriceId(31337)]?.usd ?? 1;
-  const bitcoininusd = prices['bitcoin']?.usd ?? 1
+  const cantonPrice = prices[chainIdToPriceId(31337)]?.usd ?? 1;
+  const chainLabel =
+    selectedNetwork.value.chainId === 30337 ? "CANTON-TESTNET" : "CANTON";
 
-  const cantonBalance = Number(formatEther((await getCantonBalance()).toString()));
+  /* ------------------------- Canton native balance ------------------------ */
+  const cantonBalance = Number(
+    formatEther((await getCantonBalance()).toString()),
+  );
+  const nativeEntry = buildCantonTokenEntry(
+    NATIVE_CANTON,
+    cantonBalance,
+    cantonPrice,
+    chainLabel,
+  );
 
-  const cantonEntry = {
-    id: "canton-native-balance",
-    quantity: cantonBalance,
-    denominatedValue: { value: +(cantonBalance *  cantoncoindinusd).toFixed(2) },
-    token: {
-      id: "canton-native",
-      address: "native",
-      chain: `${selectedNetwork.value.chainId === 30337 ? "CANTON-TESTNET" : "CANTON"}`,
-      symbol: "CC",
-      name: "Canton Network",
-      decimals: 9,
-      standard: "NATIVE",
-      project: {
-        id: "canton",
-        name: "Canton Network",
-        logo: null,
-        safetyLevel: "verified",
-        logoUrl: null,
-        isSpam: false,
-        __typename: "Project",
-      },
-      __typename: "Token",
-    },
-    tokenProjectMarket: {
-      id: "canton-market",
-      pricePercentChange: null,
-      tokenProject: {
-        id: "canton",
-        logoUrl: null,
-        isSpam: false,
-        __typename: "TokenProject",
-      },
-      __typename: "TokenProjectMarket",
-    },
-    __typename: "TokenBalance",
-  };
-
-  const cantonTokens = [
-  { address: "0xDE40000000000000000000000000000000000001", symbol: "USDCx" },
-  { address: "0xDE50000000000000000000000000000000000001", symbol: "HANDL" },
-  { address: "0xDE60000000000000000000000000000000000001", symbol: "CBTC" },
-  { address: "0xDE70000000000000000000000000000000000001", symbol: "CETH" },
-];
-
-  //fetch cbtc balance
+  /* --------------------- Canton ERC-20-style balances --------------------- */
   const provider = (await getCantonNetworkProvider()).provider;
+  const owner = selectedAccount.value.address;
 
-  const tokenAddress = cantonTokens[2].address
-
-
-  const address = selectedAccount.value.address.toLowerCase();
-  const addressWithoutPrefix = address.startsWith("0x")
-    ? address.slice(2)
-    : address;
-  const paddedAddress = addressWithoutPrefix.padStart(64, "0");
-  const data = `0x70a08231${paddedAddress}`;
-
-  // Make the eth_call
-  const resultCall = await provider.send("eth_call", [
-    {
-      to: tokenAddress,
-      data: data,
-    },
-    "latest",
-  ]);
-
-  const balanceHex = resultCall;
-
-  let balance: bigint;
-  if (balanceHex === "0x" || balanceHex === "0x0") {
-    balance = 0n;
-  } else {
-    balance = BigInt(balanceHex);
+  const tokenEntries: TokenBalance[] = [];
+  for (const cfg of CANTON_ASSETS) {
+    try {
+      const read = cfg.readBalance
+        ? cfg.readBalance
+        : (p: any, o: string) => readErc20Balance(p, cfg.address, o);
+      const raw = await read(provider, owner);
+      const qty = toDisplayQuantity(raw, cfg.decimals);
+      if (qty <= 0) continue;
+      tokenEntries.push(
+        buildCantonTokenEntry(cfg, qty, resolvePrice(cfg, prices), chainLabel),
+      );
+    } catch (err) {
+      // A single failing token should not break the whole page.
+      console.warn(`Failed to read Canton balance for ${cfg.symbol}`, err);
+    }
   }
 
-  const formattedBalance = Number(formatUnits(balance, 18));
-  const cbtcBalance = Math.round(formattedBalance * 10**9) / 10**9;
+  const portfolio = result?.data?.portfolios?.[0];
+  const uniswapTokens = portfolio?.tokenBalances ?? [];
+  const uniswapTotal = portfolio?.tokensTotalDenominatedValue?.value ?? 0;
 
+  const baseTokens = uniswapTokens.filter(
+    (t) => t.denominatedValue && !t.token?.project?.isSpam,
+  );
 
-  const cantonCbtcEntry = {
-    id: "canton-cbtc-balance",
-    quantity: cbtcBalance,
-    denominatedValue: { value: +(cbtcBalance *  bitcoininusd).toFixed(2)},
-    token: {
-      id: "canton-cbtc-native",
-      address: "native",
-      chain: `${selectedNetwork.value.chainId === 30337 ? "CANTON-TESTNET" : "CANTON"}`,
-      symbol: "CBTC",
-      name: "Canton wrapped Bitcoin",
-      decimals: 9,
-      standard: "NATIVE",
-      project: {
-        id: "bitcoin",
-        name: "Bitcoin",
-        logo: null,
-        safetyLevel: "verified",
-        logoUrl: null,
-        isSpam: false,
-        __typename: "Project",
-      },
-      __typename: "Token",
-    },
-    tokenProjectMarket: {
-      id: "canton-market",
-      pricePercentChange: null,
-      tokenProject: {
-        id: "canton",
-        logoUrl: null,
-        isSpam: false,
-        __typename: "TokenProject",
-      },
-      __typename: "TokenProjectMarket",
-    },
-    __typename: "TokenBalance",
-  };
+  const extras = [nativeEntry, ...tokenEntries].filter((e) => e.quantity > 0);
 
-
-
-  if (result?.data?.portfolios?.length) {
-    alltokens.value = result.data.portfolios[0].tokenBalances.filter(
-      (token) => token.denominatedValue && !token.token.project.isSpam
-    );
-
-    // Add Canton balance if > 0
-    if (cantonBalance > 0) {
-      alltokens.value = [cantonEntry, ...alltokens.value];
-    }
-
-    //add cbtc bal
-    if(cbtcBalance > 0){
-      alltokens.value = [cantonCbtcEntry, ...alltokens.value];
-
-    }
-  } else {
-    alltokens.value = cantonBalance > 0 ? [cantonEntry] : [];
-    alltokens.value = cbtcBalance > 0 ? [cantonCbtcEntry] : [];
-
-  }
-
+  alltokens.value = [...extras, ...baseTokens];
   shownTokens.value = alltokens.value.slice(0, 10);
 
-  // Update total value to include Canton balance
+  const extrasTotal = extras.reduce(
+    (sum, e) => sum + (e.denominatedValue?.value ?? 0),
+    0,
+  );
 
-
-  const uniswapTotal =
-    result?.data?.portfolios?.[0]?.tokensTotalDenominatedValue?.value || 0;
   assetsValue.value = {
     id: "total-value",
-    value: uniswapTotal + +(cantonBalance * cantoncoindinusd).toFixed(2)
-    + +(cbtcBalance * bitcoininusd).toFixed(2)
-    ,
-  };
+    value: uniswapTotal + extrasTotal,
+  } as typeof assetsValue.value;
 
-  assetsChange.value = result?.data?.portfolios?.[0]
-    ?.tokensTotalDenominatedValueChange || {
-    absolute: { id: "absolute-change", value: 0 },
-    percentage: { id: "percentage-change", value: 0 },
-  };
+  assetsChange.value =
+    portfolio?.tokensTotalDenominatedValueChange ??
+    ({
+      absolute: { id: "absolute-change", value: 0 },
+      percentage: { id: "percentage-change", value: 0 },
+    } as typeof assetsChange.value);
 
   noAssets.value = alltokens.value.length === 0;
   loading.value = false;

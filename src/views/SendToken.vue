@@ -349,7 +349,9 @@ const cantonTokens = [
   { address: "0xDE40000000000000000000000000000000000001", symbol: "USDCx" },
   { address: "0xDE50000000000000000000000000000000000001", symbol: "HANDL" },
   { address: "0xDE60000000000000000000000000000000000001", symbol: "CBTC" },
-  { address: "0xDE70000000000000000000000000000000000001", symbol: "CETH" },
+  { address: "0xDE70000000000000000000000000000000000001", symbol: "cETH" },
+  { address: "0xDE80000000000000000000000000000000000001", symbol: "BETH" },
+
 ];
 
 const segmentChange = (e: CustomEvent) => {

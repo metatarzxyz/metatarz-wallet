@@ -17,7 +17,8 @@
 
       <template v-if="noSelectedAccount">
         <p class="warn-msg">
-          No account selected, please select or add an account to see manage tokens.
+          No account selected, please select or add an account to see manage
+          tokens.
         </p>
       </template>
 
@@ -73,7 +74,8 @@
                 :disabled="
                   (token.symbol !== 'CC' && !tokens[0]?.activated) ||
                   token.activated ||
-                  token.activating || !token.enabled
+                  token.activating ||
+                  !token.enabled
                 "
                 @click="activateToken(token)"
               >
@@ -102,6 +104,7 @@ import {
   IonList,
   IonButton,
   IonLoading,
+  modalController,
 } from "@ionic/vue";
 import {
   getAccounts,
@@ -115,9 +118,13 @@ import {
   saveSelectedAccount,
   saveSelectedNetwork,
   storageGet,
+  unBlockLockout,
 } from "@/utils/platform";
 import type { Account, Network } from "@/extension/types";
 import { registerWallet, sendPreapproval } from "@/utils/canton";
+import UnlockModal from "@/views/UnlockModal.vue";
+import { setUnlockModalState } from "@/utils/unlockStore";
+import { approve } from "@/extension/userRequest";
 
 interface CantonToken {
   address: string;
@@ -139,6 +146,25 @@ const loading = ref(true);
 const tokens = ref<CantonToken[]>([]);
 const alertMsg = ref("");
 const alertOpen = ref(false);
+let interval = 0;
+
+const openModal = async () => {
+  const modal = await modalController.create({
+    component: UnlockModal,
+    animated: true,
+    focusTrap: false,
+    backdropDismiss: false,
+    componentProps: {
+      unlockType: "transaction",
+    },
+  });
+  await modal.present();
+  setUnlockModalState(true);
+  const { role } = await modal.onWillDismiss();
+  if (role === "confirm") return true;
+  await setUnlockModalState(false);
+  return false;
+};
 
 const fetchCantonTokens = async (): Promise<CantonToken[]> => {
   const allNetworks = await getNetworks();
@@ -159,7 +185,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Amulet",
       logoUrl: getUrl("assets/chain-icons/canton.webp"),
       activated: cantonNetworkTokens?.cc?.activated || false,
-      enabled: true
+      enabled: true,
     },
     {
       address: "0xDE60000000000000000000000000000000000001",
@@ -167,7 +193,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Canton wrapped Bitcoin",
       logoUrl: getUrl("assets/chain-icons/canton-cbtc.webp"),
       activated: cantonNetworkTokens?.cbtc?.activated || false,
-      enabled: true
+      enabled: true,
     },
     {
       address: "0xDE70000000000000000000000000000000000001",
@@ -176,7 +202,15 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       logoUrl: getUrl("assets/chain-icons/canton-ceth.webp"),
       activated: cantonNetworkTokens?.ceth?.activated || false,
       //disabled on testnet
-      enabled: selectedNetwork.value.chainId === 30337 ? false : true
+      enabled: selectedNetwork.value.chainId === 30337 ? false : true,
+    },
+    {
+      address: "0xDE80000000000000000000000000000000000001",
+      symbol: "BETH",
+      name: "BETH",
+      logoUrl: getUrl("assets/chain-icons/canton-beth.webp"),
+      activated: cantonNetworkTokens?.beth?.activated || false,
+      enabled: true,
     },
     {
       address: "0xDE40000000000000000000000000000000000001",
@@ -184,7 +218,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Canton USDC",
       logoUrl: getUrl("assets/chain-icons/canton-usdcx.webp"),
       activated: cantonNetworkTokens?.usdcx?.activated || false,
-      enabled: false
+      enabled: false,
     },
     {
       address: "0xDE50000000000000000000000000000000000001",
@@ -192,17 +226,46 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "HANDL",
       logoUrl: getUrl("assets/chain-icons/canton-handl.webp"),
       activated: cantonNetworkTokens?.handl?.activated || false,
-      enabled: false
+      enabled: false,
     },
   ];
+};
+
+const onCancel = () => {
+  window.close();
+  if (interval) {
+    try {
+      unBlockLockout();
+      clearInterval(interval);
+    } catch {
+      // ignore
+    }
+  }
 };
 
 const activateTokenRequest = async (symbol: string): Promise<void> => {
   try {
     loading.value = true;
+
+    //unlock wallet if locked
+    if ((selectedAccount.value.pk ?? "").length !== 66) {
+      loading.value = false
+      const modalResult = await openModal();
+      if (modalResult) {
+        unBlockLockout();
+        selectedAccount.value = await getSelectedAccount();
+      } else {
+        onCancel();
+        return
+      }
+    } else {
+      unBlockLockout();
+    }
+
+    loading.value = true
+
     if (symbol === "CC") {
       //try to register wallet
-
       const cantonData = await registerWallet(selectedAccount.value.pk);
 
       if (cantonData?.error) {
@@ -251,7 +314,7 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
           },
         },
       };
-      selectedNetwork.value = updatedNetwork
+      selectedNetwork.value = updatedNetwork;
 
       await saveNetwork(updatedNetwork);
       await saveSelectedNetwork(updatedNetwork);
@@ -290,7 +353,7 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
         },
       };
 
-      selectedNetwork.value = updatedNetwork
+      selectedNetwork.value = updatedNetwork;
       await saveNetwork(updatedNetwork);
       await saveSelectedNetwork(updatedNetwork);
     }
@@ -318,7 +381,7 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
           },
         },
       };
-      selectedNetwork.value = updatedNetwork
+      selectedNetwork.value = updatedNetwork;
       await saveNetwork(updatedNetwork);
       await saveSelectedNetwork(updatedNetwork);
     }
@@ -346,7 +409,7 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
           },
         },
       };
-      selectedNetwork.value = updatedNetwork
+      selectedNetwork.value = updatedNetwork;
       await saveNetwork(updatedNetwork);
       await saveSelectedNetwork(updatedNetwork);
     }
@@ -375,7 +438,35 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
           },
         },
       };
-      selectedNetwork.value = updatedNetwork
+      selectedNetwork.value = updatedNetwork;
+      await saveNetwork(updatedNetwork);
+      await saveSelectedNetwork(updatedNetwork);
+    }
+
+    if (symbol === "BETH") {
+      await sendPreapproval(
+        "preapproval6",
+        selectedAccount.value.cantonParty!,
+        selectedAccount.value.pk
+      );
+      const currentCanton =
+        selectedNetwork.value.tokens?.[selectedAccount.value.address]?.canton ??
+        {};
+      const updatedNetwork: Network = {
+        ...selectedNetwork.value,
+        tokens: {
+          ...selectedNetwork.value.tokens,
+          [selectedAccount.value.address]: {
+            canton: {
+              ...currentCanton,
+              beth: {
+                activated: true,
+              },
+            },
+          },
+        },
+      };
+      selectedNetwork.value = updatedNetwork;
       await saveNetwork(updatedNetwork);
       await saveSelectedNetwork(updatedNetwork);
     }
@@ -414,7 +505,10 @@ onIonViewWillEnter(async () => {
   selectedNetwork.value = await getSelectedNetwork();
 
   if (
-    !(selectedNetwork.value && [30337, 31337].includes(selectedNetwork.value.chainId))
+    !(
+      selectedNetwork.value &&
+      [30337, 31337].includes(selectedNetwork.value.chainId)
+    )
   ) {
     noSelectedNetwork.value = true;
     loading.value = false;

@@ -16,6 +16,7 @@ export interface Network {
         ceth?:  { activated: boolean };
         usdcx?: { activated: boolean };
         handl?: { activated: boolean };
+        beth?: { activated: boolean };
       };
 };
   
