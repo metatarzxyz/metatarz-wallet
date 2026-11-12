@@ -15,7 +15,7 @@
 
     <ion-content class="ion-padding">
       <ion-item
-        v-if="loading || Object.keys(networks).length < 1"
+        v-if="!loading && networks.length < 1"
         class="no-inner-border"
       >
         <ion-label>No EVM Networks found</ion-label>
@@ -63,7 +63,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, Ref } from "vue";
+import { computed, ref, Ref } from "vue";
 import { getNetworks, getUrl, replaceNetworks } from "@/utils/platform";
 import {
   IonContent,
@@ -87,39 +87,35 @@ import router from "@/router/index";
 import type { Networks } from "@/extension/types";
 import GenericBlockChain from "@/components/icons/GenericBlockChain.vue";
 
-const networks = ref({}) as Ref<Networks>;
+/** Networks as stored (keyed by chainId), the source of truth. */
+const networksById = ref({}) as Ref<Networks>;
 const loading = ref(true);
 
-const loadData = () => {
-  const pAccounts = getNetworks();
-  Promise.all([pAccounts]).then((res) => {
-    console.log(res);
-    if (res[0]) {
-      const networksObj = res[0];
-      
-      // Convert to array for display
-      const networksArray = Object.values(networksObj);
-      
-      // Sort with Canton first
-      networksArray.sort((a: any, b: any) => {
-        if (a.chainId === 31337) return -1;
-        if (b.chainId === 31337) return 1;
-        return 0;
-      });
-      
-      // Store as array if your component expects an array
-      // or keep as object but now in correct order
-      networks.value = networksArray;
-    }
-    loading.value = false;
-  });
+/** Display order: Canton first, rest in storage order. */
+const networks = computed(() =>
+  Object.values(networksById.value).sort((a, b) => {
+    if (a.chainId === 31337) return -1;
+    if (b.chainId === 31337) return 1;
+    return 0;
+  }),
+);
+
+const loadData = async () => {
+  networksById.value = await getNetworks();
+  loading.value = false;
 };
 
 const deleteNetwork = async (chainId: number) => {
   loading.value = true;
-  delete networks.value[chainId];
-  await replaceNetworks(networks.value);
-  loading.value = false;
+  try {
+    // Re-read storage so a stale view can't overwrite newer changes.
+    const current = await getNetworks();
+    delete current[chainId];
+    await replaceNetworks(current);
+    networksById.value = current;
+  } finally {
+    loading.value = false;
+  }
 };
 
 const editNetwork = (chainId: number) => {

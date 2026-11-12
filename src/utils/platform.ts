@@ -37,12 +37,25 @@ export const storageWipe = async (): Promise<void> => {
     await chrome.storage.local.clear()
 }
 
+/**
+ * Always returns networks keyed by chainId. An older NetworksTab bug could save
+ * them as an array; that shape is repaired here so `networks[chainId]` works.
+ */
+const normalizeNetworks = (raw: unknown): Networks => {
+    if (!raw || typeof raw !== 'object') return {} as Networks
+    const out = {} as Networks
+    for (const n of Object.values(raw as Record<string, Network>)) {
+        if (n && n.chainId != null) out[Number(n.chainId)] = n
+    }
+    return out
+}
+
 export const getNetworks = async (): Promise<Networks> => {
-    return (await storageGet('networks'))?.networks ?? {} as Networks
+    return normalizeNetworks((await storageGet('networks'))?.networks)
 }
 
 export const replaceNetworks = async (networks: Networks): Promise<void> => {
-    await storageSave('networks', networks)
+    await storageSave('networks', normalizeNetworks(networks))
 }
 
 export const saveNetwork = async (network: Network): Promise<void> => {

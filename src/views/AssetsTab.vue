@@ -159,6 +159,7 @@ import {
   openTab,
   getSelectedNetwork,
   getPrices,
+  getNetworks,
 } from "@/utils/platform";
 import type {
   Account,
@@ -177,6 +178,7 @@ import { copyOutline } from "ionicons/icons";
 import BridgeIcon from "@/components/icons/Bridge.vue";
 import { formatEther, formatUnits } from "ethers";
 import { chainIdToPriceId } from "@/utils/networks";
+import { getRpcPortfolio, withTimeout } from "@/utils/portfolio";
 
 type TokenBalance =
   UniSwapPortfolioResponse["data"]["portfolios"][0]["tokenBalances"][number];
@@ -282,66 +284,6 @@ const assetsChange = ref({}) as Ref<
   UniSwapPortfolioResponse["data"]["portfolios"][0]["tokensTotalDenominatedValueChange"]
 >;
 
-const UNISWAP_API_ENDPOINT = "https://interface.gateway.uniswap.org/v1/graphql";
-
-
-const getUniwapAssets = async (ownerAddress: string) => {
-  const headers = {
-    "user-agent": "Desktop",
-    accept: "*/*",
-    "accept-encoding": "gzip, deflate, br",
-    "accept-language": "en-US,en;q=0.9",
-    "content-type": "application/json",
-    dnt: "1",
-    "Content-Type": "application/json",
-    origin: "https://app.uniswap.org",
-    referer: "https://app.uniswap.org/",
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-site",
-    "sec-gpc": "1",
-  };
-
-  const query = {
-    operationName: "PortfolioBalancesWeb",
-    variables: {
-      includeSmallBalances: false,
-      includeSpamTokens: false,
-      ownerAddress,
-      chains: [
-        "ETHEREUM",
-        "OPTIMISM",
-        "BNB",
-        "POLYGON",
-        "ZKSYNC",
-        "BASE",
-        "ARBITRUM",
-        "CELO",
-        "AVALANCHE",
-        "BLAST",
-        "ZORA",
-        "MONAD",
-      ],
-    },
-    query:
-      "query PortfolioBalancesWeb($ownerAddress: String!, $chains: [Chain!]!, $includeSmallBalances: Boolean = false, $includeSpamTokens: Boolean = false) {\n  portfolios(\n    ownerAddresses: [$ownerAddress]\n    chains: $chains\n    valueModifiers: [{ownerAddress: $ownerAddress, includeSpamTokens: $includeSpamTokens, includeSmallBalances: $includeSmallBalances}]\n  ) {\n    id\n    tokensTotalDenominatedValue {\n      id\n      value\n      __typename\n    }\n    tokensTotalDenominatedValueChange(duration: DAY) {\n      absolute {\n        id\n        value\n        __typename\n      }\n      percentage {\n        id\n        value\n        __typename\n      }\n      __typename\n    }\n    tokenBalances {\n      ...PortfolioTokenBalanceParts\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment PortfolioTokenBalanceParts on TokenBalance {\n  id\n  quantity\n  denominatedValue {\n    id\n    currency\n    value\n    __typename\n  }\n  token {\n    ...SimpleTokenDetails\n    id\n    address\n    chain\n    symbol\n    name\n    decimals\n    standard\n    project {\n      id\n      name\n      logo {\n        id\n        url\n        __typename\n      }\n      safetyLevel\n      logoUrl\n      isSpam\n      __typename\n    }\n    __typename\n  }\n  tokenProjectMarket {\n    id\n    pricePercentChange(duration: DAY) {\n      id\n      value\n      __typename\n    }\n    tokenProject {\n      id\n      logoUrl\n      isSpam\n      __typename\n    }\n    __typename\n  }\n  __typename\n}\n\nfragment SimpleTokenDetails on Token {\n  id\n  address\n  chain\n  symbol\n  name\n  decimals\n  standard\n  project {\n    id\n    name\n    logo {\n      id\n      url\n      __typename\n    }\n    safetyLevel\n    logoUrl\n    isSpam\n    __typename\n  }\n  __typename\n}",
-  };
-
-  const req = await fetch(UNISWAP_API_ENDPOINT, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(query),
-  });
-
-  if (!req.ok) {
-    return null;
-  }
-
-  const res = await req.json();
-  return res as UniSwapPortfolioResponse;
-};
-
-
 /** Default `balanceOf(owner)` reader via `eth_call`. */
 const readErc20Balance = async (
   provider: any,
@@ -419,81 +361,135 @@ const resolvePrice = (
 };
 
 
-onIonViewWillEnter(async () => {
-  // Reset state in case the view is re-entered.
-  loading.value = true;
-  isError.value = false;
-  noSelectedAccount.value = false;
-  noAssets.value = false;
+/** Hard cap for the whole assets load; the spinner never stays longer. */
+const LOAD_TIMEOUT_MS = 30_000;
+/** Cap for each individual Canton RPC call. */
+const CANTON_CALL_TIMEOUT_MS = 10_000;
 
+/** Incremented on every load so a stale (slower) run can't overwrite a newer one. */
+let loadId = 0;
+
+/** Native + token balances on Canton. Never throws; failed reads are skipped. */
+const loadCantonEntries = async (
+  owner: string,
+  chainLabel: string,
+  prices: Record<string, { usd?: number } | undefined>,
+): Promise<TokenBalance[]> => {
+  const entries: TokenBalance[] = [];
+
+  /* ------------------------- Canton native balance ------------------------ */
+  const nativeTask = (async () => {
+    try {
+      const raw = await withTimeout(
+        getCantonBalance(),
+        CANTON_CALL_TIMEOUT_MS,
+        "Canton balance",
+      );
+      const qty = Number(formatEther(raw.toString()));
+      const price = prices[chainIdToPriceId(31337)]?.usd ?? 1;
+      if (qty > 0) {
+        entries.unshift(buildCantonTokenEntry(NATIVE_CANTON, qty, price, chainLabel));
+      }
+    } catch (err) {
+      console.warn("Failed to read Canton native balance", err);
+    }
+  })();
+
+  /* --------------------- Canton ERC-20-style balances --------------------- */
+  const tokensTask = (async () => {
+    let provider: any;
+    try {
+      provider = (
+        await withTimeout(
+          getCantonNetworkProvider(),
+          CANTON_CALL_TIMEOUT_MS,
+          "Canton provider",
+        )
+      ).provider;
+    } catch (err) {
+      console.warn("Failed to get Canton provider", err);
+      return;
+    }
+
+    const results = await Promise.allSettled(
+      CANTON_ASSETS.map(async (cfg) => {
+        const read = cfg.readBalance
+          ? cfg.readBalance
+          : (p: any, o: string) => readErc20Balance(p, cfg.address, o);
+        const raw = await withTimeout(
+          read(provider, owner),
+          CANTON_CALL_TIMEOUT_MS,
+          `Canton ${cfg.symbol}`,
+        );
+        return { cfg, qty: toDisplayQuantity(raw, cfg.decimals) };
+      }),
+    );
+
+    // Keep the config order stable regardless of which call returned first.
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        // A single failing token should not break the whole page.
+        console.warn(`Failed to read Canton balance for ${CANTON_ASSETS[i].symbol}`, r.reason);
+        return;
+      }
+      const { cfg, qty } = r.value;
+      if (qty <= 0) return;
+      entries.push(
+        buildCantonTokenEntry(cfg, qty, resolvePrice(cfg, prices), chainLabel),
+      );
+    });
+  })();
+
+  await Promise.all([nativeTask, tokensTask]);
+  return entries;
+};
+
+const loadAssets = async (id: number) => {
   selectedAccount.value = await getSelectedAccount();
   selectedNetwork.value = await getSelectedNetwork();
 
   if (!selectedAccount.value) {
     noSelectedAccount.value = true;
-    loading.value = false;
     return;
   }
 
   isCanton.value =
-    selectedNetwork.value.chainId === 31337 ||
-    selectedNetwork.value.chainId === 30337;
+    selectedNetwork.value?.chainId === 31337 ||
+    selectedNetwork.value?.chainId === 30337;
 
-  const result = await getUniwapAssets(selectedAccount.value.address);
-  if (!result) {
+  const owner = selectedAccount.value.address;
+  const prices = await getPrices();
+  // Same list the Networks tab shows: only scan chains the user has added.
+  const networks = await getNetworks();
+  const cantonChainId = selectedNetwork.value?.chainId === 30337 ? 30337 : 31337;
+  const chainLabel = cantonChainId === 30337 ? "CANTON-TESTNET" : "CANTON";
+
+  // EVM chains and Canton load in parallel; neither can block the other.
+  const [portfolio, extras] = await Promise.all([
+    getRpcPortfolio(owner, networks).catch((err) => {
+      console.warn("Failed to load EVM portfolio", err);
+      return null;
+    }),
+    networks[cantonChainId]
+      ? loadCantonEntries(owner, chainLabel, prices)
+      : Promise.resolve([] as TokenBalance[]),
+  ]);
+
+  if (id !== loadId) return; // a newer load started meanwhile
+
+  // Only show the error if nothing at all could be loaded.
+  if (!portfolio && extras.length === 0) {
     isError.value = true;
-    loading.value = false;
     return;
   }
 
-  const prices = await getPrices();
-  const cantonPrice = prices[chainIdToPriceId(31337)]?.usd ?? 1;
-  const chainLabel =
-    selectedNetwork.value.chainId === 30337 ? "CANTON-TESTNET" : "CANTON";
-
-  /* ------------------------- Canton native balance ------------------------ */
-  const cantonBalance = Number(
-    formatEther((await getCantonBalance()).toString()),
-  );
-  const nativeEntry = buildCantonTokenEntry(
-    NATIVE_CANTON,
-    cantonBalance,
-    cantonPrice,
-    chainLabel,
-  );
-
-  /* --------------------- Canton ERC-20-style balances --------------------- */
-  const provider = (await getCantonNetworkProvider()).provider;
-  const owner = selectedAccount.value.address;
-
-  const tokenEntries: TokenBalance[] = [];
-  for (const cfg of CANTON_ASSETS) {
-    try {
-      const read = cfg.readBalance
-        ? cfg.readBalance
-        : (p: any, o: string) => readErc20Balance(p, cfg.address, o);
-      const raw = await read(provider, owner);
-      const qty = toDisplayQuantity(raw, cfg.decimals);
-      if (qty <= 0) continue;
-      tokenEntries.push(
-        buildCantonTokenEntry(cfg, qty, resolvePrice(cfg, prices), chainLabel),
-      );
-    } catch (err) {
-      // A single failing token should not break the whole page.
-      console.warn(`Failed to read Canton balance for ${cfg.symbol}`, err);
-    }
-  }
-
-  const portfolio = result?.data?.portfolios?.[0];
-  const uniswapTokens = portfolio?.tokenBalances ?? [];
-  const uniswapTotal = portfolio?.tokensTotalDenominatedValue?.value ?? 0;
-
-  const baseTokens = uniswapTokens.filter(
+  const baseTokens = (portfolio?.tokenBalances ?? []).filter(
     (t) => t.denominatedValue && !t.token?.project?.isSpam,
   );
+  const evmTotal = portfolio?.tokensTotalDenominatedValue?.value ?? 0;
 
-  const extras = [nativeEntry, ...tokenEntries].filter((e) => e.quantity > 0);
-
+  // If the 30s cap already fired, late results still replace the error.
+  isError.value = false;
   alltokens.value = [...extras, ...baseTokens];
   shownTokens.value = alltokens.value.slice(0, 10);
 
@@ -504,7 +500,7 @@ onIonViewWillEnter(async () => {
 
   assetsValue.value = {
     id: "total-value",
-    value: uniswapTotal + extrasTotal,
+    value: evmTotal + extrasTotal,
   } as typeof assetsValue.value;
 
   assetsChange.value =
@@ -515,7 +511,26 @@ onIonViewWillEnter(async () => {
     } as typeof assetsChange.value);
 
   noAssets.value = alltokens.value.length === 0;
-  loading.value = false;
+};
+
+onIonViewWillEnter(async () => {
+  const id = ++loadId;
+
+  // Reset state in case the view is re-entered.
+  loading.value = true;
+  isError.value = false;
+  noSelectedAccount.value = false;
+  noAssets.value = false;
+
+  try {
+    await withTimeout(loadAssets(id), LOAD_TIMEOUT_MS, "Assets load");
+  } catch (err) {
+    console.error("Failed to load assets", err);
+    if (id === loadId) isError.value = true;
+  } finally {
+    // Always release the spinner, whatever happened above.
+    if (id === loadId) loading.value = false;
+  }
 });
 </script>
 
