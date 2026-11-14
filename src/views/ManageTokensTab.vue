@@ -121,7 +121,7 @@ import {
   unBlockLockout,
 } from "@/utils/platform";
 import type { Account, Network } from "@/extension/types";
-import { registerWallet, sendPreapproval } from "@/utils/canton";
+import { registerWallet, sendMergeDelegation, sendPreapproval } from "@/utils/canton";
 import UnlockModal from "@/views/UnlockModal.vue";
 import { setUnlockModalState } from "@/utils/unlockStore";
 import { approve } from "@/extension/userRequest";
@@ -325,6 +325,16 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
         selectedAccount.value.cantonParty!,
         selectedAccount.value.pk
       );
+
+      //grant merge delegation (best effort, must not block token activation)
+      try {
+        await sendMergeDelegation(
+          selectedAccount.value.cantonParty!,
+          selectedAccount.value.pk
+        );
+      } catch (e) {
+        console.error("merge delegation failed", e);
+      }
     }
 
     if (symbol === "CBTC") {

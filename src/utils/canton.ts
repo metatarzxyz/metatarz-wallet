@@ -109,6 +109,12 @@ export const sendPreapproval = async (type: string, party: string, pk: string,) 
     await sendCantonTransaction({}, type, party, pk)
 
 }
+
+// grant the wallet operator a merge delegation (prepare + execute), so it can merge
+// fragmented holdings for the user. One per user, covers all assets; 409 = already exists.
+export const sendMergeDelegation = async (party: string, pk: string) => {
+    await sendCantonTransaction({}, "merge-delegation", party, pk)
+}
 export const registerWallet = async (pk: string) => {
     const wallet = new ethers.Wallet(pk)
 
