@@ -7,7 +7,9 @@
 // origin. Wallet-to-dApp events are published through onCip103Event(); each
 // transport decides how to deliver them.
 //
-// ledgerApi is intentionally not supported (owner decision).
+// ledgerApi is proxied through the wallet's middleware (POST
+// /api/v2/cip103/ledger-api), which allow-lists the endpoints and confines them
+// to the user's party.
 
 import { ethers } from 'ethers'
 import type { Account, Network } from '@/extension/types'
@@ -31,11 +33,13 @@ import { rIdData, rIdWin, userApprove, userReject } from '@/extension/userReques
 import { signHashDER, signMsgWithPk } from '@/utils/wallet'
 import {
     callCip103Execute,
+    callCip103LedgerApi,
     callCip103Network,
     callCip103Prepare,
     cantonErrorMessage,
     isCantonChain,
     timedMessage,
+    type Cip103Auth,
     type MiddlewareError,
 } from '@/utils/canton'
 
@@ -686,6 +690,136 @@ const signMessage = async (ctx: Cip103Context, params: unknown) => {
 }
 
 // ---------------------------------------------------------------------------
+// ledgerApi
+//
+// The middleware authenticates ledger-api calls like prepare: an EIP-191
+// signature of "cip103:<unix seconds>" by the account's EVM key, accepted for 5
+// minutes. dApps call ledgerApi often (balance polling), so it never opens a
+// popup. Instead the signed header is cached per account in
+// chrome.storage.session (memory only, trusted contexts only, gone on browser
+// restart) and reused for 4 minutes (margin for clock skew and latency):
+// - unlocked: the cached header is reused, or a new one is signed;
+// - locked: the cached header is reused until it expires, then the call fails
+//   with 4100 "Wallet is locked" until the user unlocks the wallet.
+// The header is read-only access for the user's own party: executing anything
+// still needs a signature over the prepared transaction hash, made only after
+// an approval popup.
+
+const LEDGER_AUTH_KEY = 'cip103LedgerAuth'
+const LEDGER_AUTH_REUSE_MS = 4 * 6e4
+const LOCKED_MESSAGE = 'Wallet is locked. Unlock the wallet to use the Canton Ledger API.'
+
+type CachedLedgerAuth = Cip103Auth & { at: number }
+
+const readLedgerAuthCache = async (): Promise<Record<string, CachedLedgerAuth>> =>
+    (await chrome.storage.session.get(LEDGER_AUTH_KEY))?.[LEDGER_AUTH_KEY] ?? {}
+
+const writeLedgerAuth = async (address: string, auth: CachedLedgerAuth | undefined) => {
+    const cache = await readLedgerAuthCache()
+    const now = Date.now()
+    for (const [k, v] of Object.entries(cache)) {
+        if (!v || now - v.at >= LEDGER_AUTH_REUSE_MS) delete cache[k]
+    }
+    if (auth) {
+        cache[address.toLowerCase()] = auth
+    } else {
+        delete cache[address.toLowerCase()]
+    }
+    await chrome.storage.session.set({ [LEDGER_AUTH_KEY]: cache })
+}
+
+const pendingLedgerAuth = new Map<string, Promise<Cip103Auth>>()
+
+const ledgerAuthFor = async (account: Account, forceNew = false): Promise<Cip103Auth> => {
+    const key = account.address.toLowerCase()
+    if (!forceNew) {
+        const cached = (await readLedgerAuthCache())[key]
+        const age = cached ? Date.now() - cached.at : Infinity
+        if (cached && age >= 0 && age < LEDGER_AUTH_REUSE_MS) {
+            return { message: cached.message, sig: cached.sig }
+        }
+    }
+    const pending = pendingLedgerAuth.get(key)
+    if (pending) return pending
+    const request = (async () => {
+        const pk = await getUnlockedPk(account.address)
+        if (pk.length !== 66) {
+            throw new Cip103Error(CIP103_ERRORS.UNAUTHORIZED, LOCKED_MESSAGE)
+        }
+        const wallet = await unlockedKeyOf(account)
+        const at = Date.now()
+        const message = timedMessage('cip103')
+        const auth = { message, sig: await signMsgWithPk(message, wallet.privateKey) }
+        await writeLedgerAuth(key, { ...auth, at })
+        return auth
+    })().finally(() => {
+        pendingLedgerAuth.delete(key)
+    })
+    pendingLedgerAuth.set(key, request)
+    return request
+}
+
+type LedgerApiBody = { requestMethod: string, resource: string, path?: unknown, query?: unknown, body?: unknown }
+
+/** Validates a CIP-0103 LedgerApiRequest; the middleware enforces the allow-list. */
+export const validateLedgerApiRequest = (params: unknown): LedgerApiBody => {
+    const invalid = (m: string) => new Cip103Error(CIP103_ERRORS.INVALID_PARAMS, m)
+    if (!isPlainObject(params)) {
+        throw invalid('params must be a LedgerApiRequest object')
+    }
+    const { requestMethod, resource, path, query, body } = params
+    if (typeof requestMethod !== 'string' || !['GET', 'POST'].includes(requestMethod.toUpperCase())) {
+        throw invalid('requestMethod must be GET or POST')
+    }
+    // eslint-disable-next-line no-control-regex
+    if (typeof resource !== 'string' || !resource.startsWith('/v2/') || /[\u0000-\u0020\\]/.test(resource) ||
+        resource.split(/[/?#]/).some((seg) => seg === '..' || seg === '.')) {
+        throw invalid('resource must be a Ledger API path starting with /v2/')
+    }
+    if (path !== undefined && !isPlainObject(path)) {
+        throw invalid('path must be an object')
+    }
+    if (query !== undefined && !isPlainObject(query)) {
+        throw invalid('query must be an object')
+    }
+    return {
+        requestMethod: requestMethod.toUpperCase(),
+        resource,
+        ...(path !== undefined ? { path } : {}),
+        ...(query !== undefined ? { query } : {}),
+        ...(body !== undefined ? { body } : {}),
+    }
+}
+
+const ledgerApi = async (ctx: Cip103Context, params: unknown): Promise<unknown> => {
+    const s = await requireConnected(ctx)
+    const request = validateLedgerApiRequest(params)
+    if (s.info.ok && !s.info.enabled) {
+        throw new Cip103Error(CIP103_ERRORS.NOT_SUPPORTED, NOT_ENABLED_MESSAGE)
+    }
+    const signer = primaryOf(s)
+    const url = middlewareUrl(s.network)
+    const call = async (auth: Cip103Auth) => {
+        try {
+            return await callCip103LedgerApi(url, auth, request)
+        } catch (e) {
+            console.warn('CIP-0103: middleware unreachable', e)
+            throw new Cip103Error(CIP103_ERRORS.RESOURCE_UNAVAILABLE, 'Canton server unreachable')
+        }
+    }
+    let res = await call(await ledgerAuthFor(signer.account))
+    if (!res.ok && res.error.code === 401) {
+        // Header rejected (expired, clock skew): drop it and sign a fresh one if unlocked
+        await writeLedgerAuth(signer.account.address, undefined)
+        res = await call(await ledgerAuthFor(signer.account, true))
+    }
+    if (!res.ok) {
+        throw backendError(res.error)
+    }
+    return res.result
+}
+
+// ---------------------------------------------------------------------------
 // Request handler
 
 export const handleCip103Request = async (req: Cip103Request, ctx: Cip103Context): Promise<unknown> => {
@@ -746,7 +880,8 @@ export const handleCip103Request = async (req: Cip103Request, ctx: Cip103Context
             return await prepareExecute(ctx, req.params, true)
         }
         case 'ledgerApi': {
-            throw new Cip103Error(CIP103_ERRORS.UNSUPPORTED_METHOD, 'ledgerApi is not supported by this wallet')
+            // Auto-approved (no popup) for connected origins; see ledgerApi above
+            return await ledgerApi(ctx, req.params)
         }
         default: {
             throw new Cip103Error(CIP103_ERRORS.METHOD_NOT_FOUND, 'Method not found')

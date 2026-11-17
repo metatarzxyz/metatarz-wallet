@@ -371,7 +371,7 @@ export async function callCip103Network(url: string): Promise<{ enabled?: boolea
     return await readMiddlewareResponse(response);
 }
 
-type Cip103Auth = { message: string, sig: string }
+export type Cip103Auth = { message: string, sig: string }
 
 export type Cip103PrepareResponse = {
     prepare_id: string
@@ -416,6 +416,54 @@ export async function callCip103Execute(url: string, auth: Cip103Auth, body: { p
         signal: AbortSignal.timeout(120000),
     });
     return await readMiddlewareResponse(response);
+}
+
+export type Cip103LedgerApiBody = {
+    requestMethod: string
+    resource: string
+    path?: unknown
+    query?: unknown
+    body?: unknown
+}
+
+export type Cip103LedgerApiResponse =
+    | { ok: true, result: unknown }
+    | { ok: false, error: MiddlewareError }
+
+/**
+ * POST /api/v2/cip103/ledger-api: proxied, allow-listed Ledger API JSON call
+ * confined to the signer's party. A 2xx body is the participant's raw JSON (it
+ * may itself contain fields named "error" or "code"), so success and failure are
+ * told apart by the HTTP status, not by the body shape.
+ */
+export async function callCip103LedgerApi(url: string, auth: Cip103Auth, body: Cip103LedgerApiBody): Promise<Cip103LedgerApiResponse> {
+    const response = await fetch(url + '/api/v2/cip103/ledger-api', {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Signature": auth.sig,
+            "X-Message": auth.message
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
+    });
+    const text = await response.text()
+    let json: unknown = undefined
+    try {
+        json = text ? JSON.parse(text) : null
+    } catch {
+        json = undefined
+    }
+    if (!response.ok) {
+        const error = (json && typeof json === 'object' && typeof (json as MiddlewareError).error === 'string')
+            ? (json as MiddlewareError).error
+            : response.statusText
+        return { ok: false, error: { error, code: response.status } }
+    }
+    if (json === undefined) {
+        return { ok: false, error: { error: 'invalid JSON from the Canton server', code: 502 } }
+    }
+    return { ok: true, result: json }
 }
 
 async function callRegisterTopology(url: string, params: any) {
