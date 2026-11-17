@@ -82,7 +82,14 @@ const cantonErrorMessage = (res?: MiddlewareError): string => {
             if (error === 'registration signature already used') {
                 return 'This registration request was already submitted. Please try again.'
             }
-            return 'The wallet signature was rejected as expired or invalid. Check that your device clock is correct and try again.'
+            if (error === 'user not found') {
+                return 'This account is not registered with Canton. Activate CC in Manage Tokens first.'
+            }
+            // "message expired or invalid format", "registration message expired or invalid timestamp"
+            if (/expired|timestamp/i.test(error ?? '')) {
+                return 'The wallet signature was rejected as expired or invalid. Check that your device clock is correct and try again.'
+            }
+            break
         case 403:
             return 'Not authorized: ' + (error ?? 'request rejected')
         case 404:
