@@ -1262,8 +1262,12 @@ const mainListener = (message: RequestArguments, sender: chrome.runtime.MessageS
                     break
                 }
                 case 'wallet_get_data': {
-                    if (String(sender.tab?.windowId) in rIdData) {
+                    // Only the wallet's own approval popup can read its request data.
+                    // Always answer, so a popup that asks before the data is stored can retry.
+                    if (isExtensionSender(sender) && String(sender.tab?.windowId) in rIdData) {
                         sendResponse(rIdData[String(sender?.tab?.windowId ?? '')] ?? {})
+                    } else {
+                        sendResponse(null)
                     }
                     break
                 }

@@ -21,6 +21,14 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/SignTx.vue'),
   },
   {
+    path: '/canton-sign/:rid/:param/:website',
+    component: () => import('@/views/CantonSign.vue'),
+  },
+  {
+    path: '/canton-tx/:rid/:param/:website',
+    component: () => import('@/views/CantonSign.vue'),
+  },
+  {
     path: '/switch-network/:rid/:param/:website',
     component: () => import('@/views/SwitchNetwork.vue'),
   },

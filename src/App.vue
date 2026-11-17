@@ -108,6 +108,18 @@ onMounted(() => {
       });
       break;
     }
+    case "canton-sign": {
+      router.push({
+        path: `/canton-sign/${rid}/${param}/${website}`,
+      });
+      break;
+    }
+    case "canton-tx": {
+      router.push({
+        path: `/canton-tx/${rid}/${param}/${website}`,
+      });
+      break;
+    }
     case "switch-network": {
       router.push({
         path: `/switch-network/${rid}/${param}/${website}`,
