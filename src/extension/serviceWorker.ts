@@ -260,13 +260,12 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error(error));
 
-async function pasteAddress () {
-    const currentAddress = (await (window as any).ethereum?.request({
-        method: 'eth_accounts',
-        params: []
-    }))
-    if (currentAddress.length > 0) {
-        document.execCommand("insertText", false, currentAddress[0]);
+// Runs in the page: only inserts the address passed in by the service worker.
+// The address is read here, not via window.ethereum, so pasting it into a
+// field never connects the site (eth_accounts stays [] for unconnected sites).
+function pasteAddress (address: string) {
+    if (address) {
+        document.execCommand("insertText", false, address);
     }
 }
 
@@ -276,10 +275,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     if (info.menuItemId === CLW_CONTEXT_MENU_ID && tab?.id && !isOwnExtension) {
         try {
+            const address = (await getSelectedAddress())?.[0]
+            if (!address) return
             await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
+                target: { tabId: tab.id, frameIds: [info.frameId ?? 0] },
                 world: 'MAIN',
-                func: pasteAddress
+                func: pasteAddress,
+                args: [address]
             });
         } catch {
             // igonre
