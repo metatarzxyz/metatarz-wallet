@@ -60,9 +60,13 @@ const cache = new Map<string, { [key: string]: any }>()
 
 // Origin of the frame that sent the message, as reported by the browser.
 // Never taken from message data, which the page can influence.
+// Opaque origins (sandboxed iframes, data: URLs) report origin "null": treat
+// them as unknown ('' = unauthorized) instead of deriving one from the URL,
+// which would let a sandboxed frame borrow its URL's connected origin.
+// The URL is only used when the browser does not report an origin (Firefox).
 const getSenderOrigin = (sender: chrome.runtime.MessageSender): string => {
-    if (sender?.origin && sender.origin !== 'null') {
-        return sender.origin
+    if (sender?.origin !== undefined) {
+        return sender.origin && sender.origin !== 'null' ? sender.origin : ''
     }
     try {
         const origin = new URL(sender?.url ?? '').origin
