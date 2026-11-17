@@ -8,7 +8,7 @@ const defaultSettings = {
     encryptAfterEveryTx: false,
     lockOutEnabled: false,
     lockOutPeriod: 2,
-    lockOutBlocked: false,
+    lockOutBlockedUntil: 0,
     showRawTransactionData: true,
     enableAssetTransactionSimulation: false,
     assetTransactionSimulationAlchemyKey: '',
@@ -226,18 +226,36 @@ export const writeCAWipe = async (): Promise<void> => {
 }
 
 
+// Auto-lock is suspended while an approval popup is open. The suspension is a
+// lease that expires on its own, so a popup that is closed without unblocking
+// (window X, crash, killed service worker) can never disable auto-lock for good.
+// Approval popups auto-reject after 140s, so the lease outlives a normal popup.
+export const LOCKOUT_BLOCK_LEASE_MS = 5 * 6e4
+
 export const blockLockout = async (): Promise<Settings> => {
     const settings = await getSettings()
-    settings.lockOutBlocked = true
+    settings.lockOutBlockedUntil = Date.now() + LOCKOUT_BLOCK_LEASE_MS
     await setSettings(settings)
     return settings
 }
 
-export const unBlockLockout = async (): Promise<Settings> => {
+// Pass activity = true when the user actually used the unlocked wallet
+// (e.g. approved a signature) to restart the auto-lock period.
+export const unBlockLockout = async (activity = false): Promise<Settings> => {
     const settings = await getSettings()
-    settings.lockOutBlocked = false
+    settings.lockOutBlockedUntil = 0
+    if (activity) {
+        settings.lastLock = Date.now()
+    }
     await setSettings(settings)
     return settings
+}
+
+// Records an unlock / user activity; auto-lock fires lockOutPeriod after this.
+export const markWalletActivity = async (): Promise<void> => {
+    const settings = await getSettings()
+    settings.lastLock = Date.now()
+    await setSettings(settings)
 }
 
 export const getBalanceCache = async (): Promise<string> => {

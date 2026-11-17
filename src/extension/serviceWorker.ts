@@ -164,6 +164,12 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
     console.info('Service worker startup');
     enableRightClickPasteAddr();
+    // Always start a browser session locked, and drop any stale auto-lock suspension
+    clearPk().catch((e) => console.warn('Lock on startup failed', e));
+    getSettings().then((settings) => {
+        settings.lockOutBlockedUntil = 0
+        return setSettings(settings)
+    }).catch(() => {});
     if (chrome.runtime.lastError) {
         console.warn("Whoops.. " + chrome.runtime.lastError.message);
     }
@@ -230,12 +236,17 @@ chrome.alarms.onAlarm.addListener((alarm) => {
             console.warn('Prices update failed', err)
         })
     }
-    getSettings().then((settings) => {
-        if (((settings.lastLock + settings.lockOutPeriod * 6e4) < Date.now()) && settings.lockOutEnabled && !settings.lockOutBlocked) {
-            settings.lastLock = Date.now()
-            clearPk()
+    getSettings().then(async (settings) => {
+        const now = Date.now()
+        const blocked = (settings.lockOutBlockedUntil ?? 0) > now
+        if (settings.lockOutEnabled && !blocked && (now - (settings.lastLock ?? 0)) > settings.lockOutPeriod * 6e4) {
+            await clearPk()
+            settings.lastLock = now
+            settings.lockOutBlockedUntil = 0
+            await setSettings(settings)
         }
-        
+
+
         runMigrations(settings).catch((e) => {
             console.warn('Migration failed', e)
         })
@@ -263,6 +274,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 })
 
 chrome.windows.onRemoved.addListener(async (winId) => {
+    const wasPendingApproval = !!userReject?.[winId]
     if (winId in (userReject ?? {})) {
         userReject[winId]?.()
     }
@@ -270,6 +282,15 @@ chrome.windows.onRemoved.addListener(async (winId) => {
     userApprove[winId] = undefined
     rIdWin[winId] = undefined
     rIdData[winId] = undefined
+    // An approval popup was closed (possibly via the window X, which skips the
+    // popup's own unblock): lift the auto-lock suspension once none are left.
+    if (wasPendingApproval && !Object.values(userReject).some(Boolean)) {
+        const s = await getSettings()
+        if (s.lockOutBlockedUntil) {
+            s.lockOutBlockedUntil = 0
+            await setSettings(s)
+        }
+    }
     const wins = await chrome.windows.getAll()
     if (wins.length === 0) {
         const s = await getSettings()

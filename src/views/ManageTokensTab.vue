@@ -231,16 +231,17 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
   ];
 };
 
-const onCancel = () => {
-  window.close();
+const onCancel = async () => {
   if (interval) {
-    try {
-      unBlockLockout();
-      clearInterval(interval);
-    } catch {
-      // ignore
-    }
+    clearInterval(interval);
   }
+  // Lift the auto-lock suspension before the window (and this script) goes away
+  try {
+    await unBlockLockout();
+  } catch {
+    // ignore
+  }
+  window.close();
 };
 
 const activateTokenRequest = async (symbol: string): Promise<void> => {

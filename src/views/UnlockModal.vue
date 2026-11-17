@@ -102,7 +102,7 @@ import {
   modalController,
   IonLoading,
 } from "@ionic/vue";
-import { getAccounts, replaceAccounts, saveSelectedAccount } from "@/utils/platform";
+import { getAccounts, replaceAccounts, saveSelectedAccount, markWalletActivity } from "@/utils/platform";
 import { decrypt, getCryptoParams } from "@/utils/webCrypto";
 import { unlockModalStateSubscribe } from "@/utils/unlockStore";
 
@@ -134,6 +134,7 @@ const unlock = async () => {
     accounts = await Promise.all(accProm);
     await replaceAccounts(accounts);
     await saveSelectedAccount(accounts[0]);
+    await markWalletActivity();
     loading.value = false;
     return modalController?.dismiss(mpPass.value, "confirm");
   } catch {

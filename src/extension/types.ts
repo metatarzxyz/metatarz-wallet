@@ -72,8 +72,11 @@ export interface Settings {
     lockOutPeriod: number
     lockOutEnabled: boolean
     theme: 'system' | 'light' | 'dark'
+    // Time of the last unlock / user activity (or the last auto-lock); auto-lock
+    // fires when lockOutPeriod minutes have passed since then.
     lastLock: number
-    lockOutBlocked: boolean
+    // Auto-lock is suspended until this timestamp while an approval popup is open
+    lockOutBlockedUntil?: number
     copyLowerCaseAddress?: boolean
     lastRPCNotification: number
     lastExecutedMigration: string

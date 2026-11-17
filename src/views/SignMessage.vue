@@ -148,16 +148,17 @@ const alertMsg = ref("");
 const timerReject = ref(140);
 let interval: any;
 
-const onCancel = () => {
-  window.close();
+const onCancel = async () => {
   if (interval) {
-    try {
-      unBlockLockout();
-      clearInterval(interval);
-    } catch {
-      // ignore
-    }
+    clearInterval(interval);
   }
+  // Lift the auto-lock suspension before the window (and this script) goes away
+  try {
+    await unBlockLockout();
+  } catch {
+    // ignore
+  }
+  window.close();
 };
 
 onIonViewWillEnter(async () => {
@@ -203,14 +204,14 @@ const onSign = async () => {
   if ((selectedAccount.pk ?? "").length !== 66) {
     const modalResult = await openModal();
     if (modalResult) {
-      unBlockLockout();
+      await unBlockLockout(true);
       loading.value = true;
       approve(rid);
     } else {
       onCancel();
     }
   } else {
-    unBlockLockout();
+    await unBlockLockout(true);
     approve(rid);
   }
   loading.value = false;
