@@ -852,7 +852,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                             chrome.windows.create({
                                 height: 510,
                                 width: 480,
-                                url: chrome.runtime.getURL(`index.html?route=sign-msg&param=${strToHex(signMsgData)}&rid=${String(message?.resId ?? '')}&website=${strToHex(webDomain)}`),
+                                url: chrome.runtime.getURL(`index.html?route=sign-msg&param=${strToHex(JSON.stringify({ typed: isTypedSigned, data: signMsgData }))}&rid=${String(message?.resId ?? '')}&website=${strToHex(webDomain)}`),
                                 type: 'popup'
                             }).then((win) => {
                                 userReject[String(win?.id)] = reject

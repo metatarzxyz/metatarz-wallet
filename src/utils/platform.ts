@@ -272,28 +272,30 @@ export const clearPk = async (): Promise<void> => {
     await Promise.all([replaceAccounts(accounts), saveSelectedAccount(accounts[0])])
 }
 
+// Lossless UTF-8 <-> hex helpers used to pass data to popups via the URL.
+// hexTostr returns the input unchanged if it is not well-formed hex or not valid UTF-8,
+// so nothing is ever silently re-interpreted for display.
 export const hexTostr = (hexStr: string) => {
     if (hexStr.substring(0, 2) !== '0x') {
        return hexStr
     }
-    hexStr = hexStr.substring(2);
-    const match = hexStr.match(/../g);
-    const bytes = new Uint8Array(match ? match.map(h => parseInt(h, 16)) : []);
+    const hex = hexStr.substring(2);
+    if (hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
+        return hexStr
+    }
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+    }
     try {
-    const decoder = new TextDecoder('utf-8', { fatal: true });
-    return decoder.decode(bytes);
+        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     } catch {
-        const chunks = [];
-        for (let i = 0, charsLength = hexStr.length; i < charsLength; i += 2) {
-            chunks.push(hexStr.substring(i, i + 2));
-        }
-       return chunks.reduce(
-       (pv, cv) => `${pv}${String.fromCharCode(parseInt(cv, 16))}`,
-               '')
-       }
+        return hexStr
+    }
 };
 
-export const strToHex = (str: string) =>  `0x${str.split('').map( s => s.charCodeAt(0).toString(16)).join('')}`
+export const strToHex = (str: string) =>
+    `0x${Array.from(new TextEncoder().encode(str), b => b.toString(16).padStart(2, '0')).join('')}`
 
 export const numToHexStr = (num: number | bigint) => `0x${num.toString(16)}`
 

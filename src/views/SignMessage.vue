@@ -32,6 +32,9 @@
           </div>
         </div>
       </ion-item>
+      <ion-item v-if="signNote">
+        <span style="font-size: 0.9rem; color: var(--ion-color-warning)">{{ signNote }}</span>
+      </ion-item>
       <ion-item>
         <div
           style="
@@ -88,6 +91,7 @@ import {
 } from "@ionic/vue";
 import { approve, walletPing } from "@/extension/userRequest";
 import { useRoute } from "vue-router";
+import { ethers } from "ethers";
 import {
   getSelectedAccount,
   unBlockLockout,
@@ -105,15 +109,40 @@ const rid = (route?.params?.rid as string) ?? "";
 const website = route?.params?.website ? hexTostr(route?.params?.website as string) : "";
 
 let sigmMsg: string = "";
+let sigNote: string = "";
 
+// The service worker passes { typed, data } where data is exactly the payload that will be signed.
 try {
-  const typeSign = JSON.parse(hexTostr(hexTostr((route?.params?.param as string) ?? "")));
-  sigmMsg = JSON.stringify(typeSign, null, 2);
-} catch (e) {
-  sigmMsg = hexTostr(hexTostr((route?.params?.param as string) ?? ""));
+  const { typed, data } = JSON.parse(hexTostr((route?.params?.param as string) ?? "")) as {
+    typed: boolean;
+    data: string;
+  };
+  if (typed) {
+    try {
+      sigmMsg = JSON.stringify(JSON.parse(data), null, 2);
+    } catch {
+      sigmMsg = data;
+      sigNote = "Typed data is not valid JSON and cannot be signed.";
+    }
+  } else if (data.startsWith("0x")) {
+    // Hex payloads are signed as raw bytes (see signMsg in utils/wallet.ts)
+    try {
+      sigmMsg = new TextDecoder("utf-8", { fatal: true }).decode(ethers.getBytes(data));
+    } catch {
+      sigmMsg = data;
+      sigNote =
+        "This message is not readable text and is shown as raw hex. It may be a hash or transaction data; only sign it if you fully trust this site.";
+    }
+  } else {
+    sigmMsg = data;
+  }
+} catch {
+  sigmMsg = "";
+  sigNote = "Unable to decode the request.";
 }
 
 const signMsg = ref(sigmMsg);
+const signNote = ref(sigNote);
 const alertOpen = ref(false);
 const alertMsg = ref("");
 const timerReject = ref(140);
