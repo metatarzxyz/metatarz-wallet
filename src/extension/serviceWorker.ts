@@ -17,7 +17,8 @@ import {
     saveSelectedNetwork,
     isSiteConnected,
     addConnectedSite,
-    removeConnectedSite
+    removeConnectedSite,
+    isCantonSiteConnected
 } from '@/utils/platform';
 import {
     userApprove,
@@ -50,6 +51,7 @@ import { allTemplateNets, noFoundNetworks } from '@/utils/networks'
 import { cyrb64Hash, stringify } from '@/utils/misc'
 import { runMigrations } from '@/utils/network-migrations'
 import { getCantonTransferToken, isCantonChain, sendCantonTransaction } from '@/utils/canton';
+import { handleCip103Request, onCip103Event, toCip103Error, watchCip103State, type Cip103Event } from '@/extension/cip103';
 
 // const METAMAKS_EXTENSION_ID = 'nkbihfbeogaeaoehlefnkodbefgpgknn'
 
@@ -103,6 +105,33 @@ const authorizedOnlyMethods = new Set([
     'wallet_switchEthereumChain',
     'wallet_addEthereumChain',
 ])
+
+// CIP-0103 events waiting to be picked up by the content scripts. Only an event
+// id is broadcast to the tabs; each frame then asks for the event and gets it
+// only if its own (browser-reported) origin may see it.
+const CIP103_EVENT_TTL_MS = 6e4
+const cip103Events = new Map<string, Cip103Event & { at: number }>()
+
+onCip103Event((event) => {
+    const now = Date.now()
+    for (const [id, e] of cip103Events) {
+        if (now - e.at > CIP103_EVENT_TTL_MS) cip103Events.delete(id)
+    }
+    const id = crypto.randomUUID()
+    cip103Events.set(id, { ...event, at: now })
+    triggerListener('canton', { id })
+})
+
+watchCip103State()
+
+const cip103EventFor = async (id: unknown, sender: chrome.runtime.MessageSender) => {
+    const event = typeof id === 'string' ? cip103Events.get(id) : undefined
+    const origin = getSenderOrigin(sender)
+    if (!event || !origin || isExtensionSender(sender)) return undefined
+    if (event.origin !== undefined && event.origin !== origin) return undefined
+    if (event.requireConnected && !(await isCantonSiteConnected(origin))) return undefined
+    return { method: event.event, params: event.payload }
+}
 
 const permissionsResponse = async (origin: string) => [{
     id: smallRandomString(21),
@@ -1189,8 +1218,26 @@ const mainListener = (message: RequestArguments, sender: chrome.runtime.MessageS
                     } else if (listener === 'chainChanged') {
                         const network = await getSelectedNetwork()
                         sendResponse({ deliver: true, data: numToHexStr(network?.chainId ?? 0) })
+                    } else if (listener === 'canton') {
+                        const event = await cip103EventFor(message?.params?.[1], sender)
+                        sendResponse(event ? { deliver: true, data: event } : { deliver: false })
                     } else {
                         sendResponse({ deliver: false })
+                    }
+                    break
+                }
+                case 'canton_cip103': {
+                    // CIP-0103 request relayed by the content script: [method, params].
+                    // The origin always comes from the browser-reported sender.
+                    const [method, params] = Array.isArray(message?.params) ? message.params : []
+                    try {
+                        const result = await handleCip103Request(
+                            { method: String(method ?? ''), params },
+                            { origin: requestOrigin(sender), subframe: (sender?.frameId ?? 0) !== 0 }
+                        )
+                        sendResponse({ result: result === undefined ? null : result })
+                    } catch (e) {
+                        sendResponse({ error: toCip103Error(e) })
                     }
                     break
                 }

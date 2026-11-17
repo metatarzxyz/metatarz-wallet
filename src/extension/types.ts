@@ -89,7 +89,7 @@ export interface ConnectedSites {
     [origin: string]: { date: number }
 }
 
-export type listenerType = 'accountsChanged' | 'connect' | 'disconnect' | 'chainChanged'
+export type listenerType = 'accountsChanged' | 'connect' | 'disconnect' | 'chainChanged' | 'canton'
 
 export interface HistoryItem {
     date: number
