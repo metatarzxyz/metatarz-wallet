@@ -23,17 +23,11 @@
                 <ion-item :disabled="noAccounts">
                   <div style="display: flex; flex-direction: column">
                     <ion-item class="ion-no-padding no-inner-border">
-                      <ion-label>Enable Storage Encryption</ion-label>
-                      <ion-toggle
-                        aria-label="Enable Storage Encryption"
-                        @ion-change="changeEncryption"
-                        slot="end"
-                        :checked="settings.s?.enableStorageEnctyption"
-                        :key="setEncryptToggleKey"
-                      ></ion-toggle>
+                      <ion-label>Storage Encryption: always on</ion-label>
                     </ion-item>
                     <p class="helper-label">
-                      This will require to input an encrypto key when storage is locked.
+                      Private keys are always stored encrypted with your password and
+                      are only decrypted in memory while the wallet is unlocked.
                     </p>
                   </div>
                 </ion-item>
@@ -275,10 +269,7 @@
       </ion-loading>
       <ion-modal
         :is-open="mpModal"
-        @did-dismiss="
-          mpModal = false;
-          modalDismiss();
-        "
+        @did-dismiss="mpModal = false"
       >
         <ion-header>
           <ion-toolbar>
@@ -290,63 +281,29 @@
                         modalGetPassword.reject();
                         modalGetPassword = null;
                       })()
-                    : (() => {
-                        mpModal = false;
-                        mpModalEnctyption = settings.s.enableStorageEnctyption;
-                      })()
+                    : (mpModal = false)
                 "
                 >Close</ion-button
               >
             </ion-buttons>
-            <ion-title v-if="!settings.s.enableStorageEnctyption"
-              >Create Encryption Password</ion-title
-            >
-            <ion-title v-else>Enter Encryption Password</ion-title>
+            <ion-title>Enter Encryption Password</ion-title>
           </ion-toolbar>
         </ion-header>
         <ion-content class="ion-padding">
-          <template v-if="settings.s.enableStorageEnctyption">
-            <ion-item>
-              <ion-label
-                >Password
-                <span class="helper-label"
-                  >(Required: was set before by user)
-                </span></ion-label
-              >
-            </ion-item>
-            <ion-item>
-              <ion-input
-                aria-label="password"
-                v-model="mpPass"
-                type="password"
-                fill="outline"
-              ></ion-input>
-            </ion-item>
-          </template>
-          <template v-else>
-            <ion-item>
-              <ion-label>New Password</ion-label>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                aria-label="password"
-                v-model="mpPass"
-                type="password"
-                fill="outline"
-              ></ion-input>
-            </ion-item>
-            <ion-item>
-              <ion-label>Confirm New Password</ion-label>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                aria-label="password"
-                v-model="mpConfirm"
-                type="password"
-                fill="outline"
-              ></ion-input>
-            </ion-item>
-          </template>
+          <ion-item>
+            <ion-label
+              >Password
+              <span class="helper-label">(Required: was set before by user) </span></ion-label
+            >
+          </ion-item>
+          <ion-item>
+            <ion-input
+              aria-label="password"
+              v-model="mpPass"
+              type="password"
+              fill="outline"
+            ></ion-input>
+          </ion-item>
           <ion-item>
             <ion-button
               @click="
@@ -355,7 +312,7 @@
                       modalGetPassword.resolve();
                       modalGetPassword = null;
                     })()
-                  : confirmModal()
+                  : (mpModal = false)
               "
               >Confirm</ion-button
             >
@@ -380,11 +337,13 @@ import {
   getSettings,
   setSettings,
   getAccounts,
-  saveSelectedAccount,
   replaceAccounts,
   openTab,
   isFirefox,
+  hasEncryptionPassword,
+  addUnlockedPks,
 } from "@/utils/platform";
+import { openSetPasswordModal } from "@/utils/storageEncryption";
 import { decrypt, encrypt, getCryptoParams } from "@/utils/webCrypto";
 import { Account } from "@/extension/types";
 import { exportFile } from "@/utils/misc";
@@ -417,16 +376,13 @@ import {
 
 const loading = ref(true);
 const mpModal = ref(false);
-const mpModalEnctyption = ref(false);
 const mpPass = ref("");
-const mpConfirm = ref("");
 const alertOpen = ref(false);
 const alertMsg = ref("");
 const toastState = ref(false);
 const toastMsg = ref("");
 const alertHeader = ref("Error");
 const lockOutPeriod = defineModel({ default: 2 });
-const setEncryptToggleKey = ref(0);
 const importFile = (ref(null) as unknown) as Ref<HTMLInputElement>;
 const isRuntimeFirefox = ref(false);
 
@@ -451,11 +407,6 @@ const saveSettings = async () => {
   loading.value = true;
   await setSettings({ ...settings.s });
   loading.value = false;
-};
-
-const setEncryptToggle = (state: boolean) => {
-  setEncryptToggleKey.value++;
-  settings.s.enableStorageEnctyption = state;
 };
 
 const changeAutoLock = async () => {
@@ -497,80 +448,6 @@ const changeTheme = async (theme: "system" | "light" | "dark") => {
   radioTheme.value = theme;
   settings.s.theme = theme;
   await saveSettings();
-};
-
-const changeEncryption = async () => {
-  loading.value = true;
-  mpModal.value = true;
-  loading.value = false;
-};
-
-const confirmModal = async () => {
-  if (mpPass.value.length < 3) {
-    loading.value = false;
-    alertHeader.value = "Error";
-    alertMsg.value = "Password is too short. More than 3 characters are required.";
-    alertOpen.value = true;
-    mpModalEnctyption.value = settings.s.enableStorageEnctyption;
-    return;
-  }
-
-  if (!settings.s.enableStorageEnctyption) {
-    if (mpPass.value !== mpConfirm.value) {
-      loading.value = false;
-      alertHeader.value = "Error";
-      alertMsg.value = "Password and confirm password do not match";
-      alertOpen.value = true;
-      mpModalEnctyption.value = settings.s.enableStorageEnctyption;
-      return;
-    }
-    let accounts = await getAccounts();
-    const cryptoParams = await getCryptoParams(mpPass.value);
-    const accProm = accounts.map(async (a) => {
-      a.encPk = await encrypt(a.pk, cryptoParams);
-      a.pk = "";
-      return a;
-    });
-    accounts = await Promise.all(accProm);
-    await replaceAccounts(accounts);
-    await saveSelectedAccount(accounts[0]);
-    mpModalEnctyption.value = true;
-    await setSettings({ ...settings.s, enableStorageEnctyption: true });
-    mpPass.value = "";
-    mpConfirm.value = "";
-    mpModal.value = false;
-  } else {
-    try {
-      let accounts = await getAccounts();
-      const cryptoParams = await getCryptoParams(mpPass.value);
-      const accProm = accounts.map(async (a) => {
-        if (a.encPk) {
-          a.pk = await decrypt(a.encPk, cryptoParams);
-        }
-        return a;
-      });
-      accounts = await Promise.all(accProm);
-      await replaceAccounts(accounts);
-      await saveSelectedAccount(accounts[0]);
-      mpModalEnctyption.value = false;
-      settings.s.enableStorageEnctyption = false;
-      settings.s.lockOutEnabled = false;
-      settings.s.encryptAfterEveryTx = false;
-      await setSettings({ ...settings.s });
-      mpPass.value = "";
-      mpConfirm.value = "";
-      mpModal.value = false;
-    } catch (error) {
-      loading.value = false;
-      alertHeader.value = "Error";
-      alertMsg.value = "Decryption failed, password is not correct.";
-      alertOpen.value = true;
-      mpModalEnctyption.value = settings.s.enableStorageEnctyption;
-      return;
-    }
-  }
-
-  loading.value = false;
 };
 
 const validateFile = () => {
@@ -657,43 +534,39 @@ const importAcc = async () => {
     alertOpen.value = true;
     return;
   }
-  const accounts = await getAccounts();
   const newAccounts = ((validation as unknown) as { json: Account[] }).json;
-  if (settings.s.enableStorageEnctyption) {
-    const hasPass = await promptForPassword(accounts);
-    if (hasPass) {
-      const cryptoParams = await getCryptoParams(mpPass.value);
-      const accProm = newAccounts.map(async (a) => {
-        if (a.pk.length === 64) {
-          a.pk = `0x${a.pk}`;
-        }
-        a.encPk = await encrypt(a.pk, cryptoParams);
-        return a;
-      });
-      const encNewAccounts = await Promise.all(accProm);
-      await replaceAccounts([...accounts, ...encNewAccounts]);
-      alertHeader.value = "Success";
-      alertMsg.value = "Successfully imported new accounts.";
-      alertOpen.value = true;
-      noAccounts.value = false;
-      mpPass.value = "";
-      mpModal.value = false;
-    }
-    return false;
+  // Encryption is mandatory: verify the existing password, or create one
+  // when importing into a wallet that has no accounts yet
+  let password = "";
+  if (await hasEncryptionPassword()) {
+    const hasPass = await promptForPassword(await getAccounts());
+    if (!hasPass) return false;
+    password = mpPass.value;
   } else {
-    await replaceAccounts([
-      ...accounts,
-      ...newAccounts.map((a) => {
-        a.encPk = "";
-        return a;
-      }),
-    ]);
-    alertHeader.value = "Success";
-    alertMsg.value = "Successfully imported new accounts.";
-    alertOpen.value = true;
-    noAccounts.value = false;
-    mpModal.value = false;
+    const newPass = await openSetPasswordModal();
+    if (!newPass) return false;
+    password = newPass;
+    settings.s.enableStorageEnctyption = true;
   }
+  const accounts = await getAccounts();
+  const cryptoParams = await getCryptoParams(password);
+  const accProm = newAccounts.map(async (a) => {
+    let pk = a.pk;
+    if (pk.length === 64) {
+      pk = `0x${pk}`;
+    }
+    return { name: a.name, address: a.address, pk, encPk: await encrypt(pk, cryptoParams) } as Account;
+  });
+  const encNewAccounts = await Promise.all(accProm);
+  // Only encPk is written to storage; the plaintext keys go to the session store
+  await addUnlockedPks(encNewAccounts);
+  await replaceAccounts([...accounts, ...encNewAccounts]);
+  alertHeader.value = "Success";
+  alertMsg.value = "Successfully imported new accounts.";
+  alertOpen.value = true;
+  noAccounts.value = false;
+  mpPass.value = "";
+  mpModal.value = false;
 };
 
 const exportAcc = async () => {
@@ -702,21 +575,20 @@ const exportAcc = async () => {
     alertMsg.value = "You need at least one account to export.";
     alertOpen.value = true;
   }
-  if (settings.s.enableStorageEnctyption) {
-    const hasPass = await promptForPassword(accounts);
-    if (hasPass) {
-      const cryptoParams = await getCryptoParams(mpPass.value);
-      const accProm = accounts.map(async (a) => {
+  const hasPass = await promptForPassword(accounts);
+  if (hasPass) {
+    const cryptoParams = await getCryptoParams(mpPass.value);
+    mpPass.value = "";
+    const accProm = accounts.map(async (a) => {
+      if (a.encPk) {
         a.pk = await decrypt(a.encPk, cryptoParams);
-        return a;
-      });
-      const encNewAccounts = await Promise.all(accProm);
-      exportFile("wallet_export.json", JSON.stringify(encNewAccounts, null, 2));
-    }
-    return false;
-  } else {
-    exportFile("wallet_export.json", JSON.stringify(accounts, null, 2));
+      }
+      return a;
+    });
+    const encNewAccounts = await Promise.all(accProm);
+    exportFile("wallet_export.json", JSON.stringify(encNewAccounts, null, 2));
   }
+  return false;
 };
 
 onIonViewWillEnter(async () => {
@@ -750,10 +622,6 @@ const setTime = async () => {
   loading.value = false;
   toastMsg.value = "Auto-lock period was set";
   toastState.value = true;
-};
-
-const modalDismiss = () => {
-  setEncryptToggle(mpModalEnctyption.value);
 };
 </script>
 

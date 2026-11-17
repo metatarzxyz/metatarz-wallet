@@ -159,11 +159,10 @@ const loadData = () => {
 
 const deleteAccount = async (address: string) => {
   loading.value = true;
-  if (settings.value.enableStorageEnctyption) {
-    const modalR = await openModal("delAcc");
-    if (!modalR) {
-      return;
-    }
+  // Storage encryption is mandatory: deleting an account requires the password
+  const modalR = await openModal("delAcc");
+  if (!modalR) {
+    return;
   }
   const findIndex = accounts.value.findIndex((a) => a.address === address);
   const selectedAccount = await getSelectedAccount();
@@ -212,14 +211,11 @@ const openModal = async (type: string) => {
 const viewPk = async (addr: string) => {
   let pk = "";
   const account = accounts.value.find((a) => a.address === addr);
-  if (settings.value.enableStorageEnctyption) {
-    if (account?.encPk) {
-      const modalR = await openModal("viewPk");
-      if (modalR) {
-        const account = (await getAccounts()).find((a) => a.address === addr);
-        pk = account?.pk ?? "";
-      }
-    } else {
+  if (account?.encPk) {
+    // Always ask for the password; the decrypted key comes from the session store
+    const modalR = await openModal("viewPk");
+    if (modalR) {
+      const account = (await getAccounts()).find((a) => a.address === addr);
       pk = account?.pk ?? "";
     }
   } else {

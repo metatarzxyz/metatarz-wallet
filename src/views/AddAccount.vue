@@ -150,12 +150,15 @@ import {
   paste,
   getSettings,
   replaceAccounts,
+  hasEncryptionPassword,
+  addUnlockedPks,
 } from "@/utils/platform";
 import router from "@/router";
 import { useRoute } from "vue-router";
 import type { Account, Settings } from "@/extension/types";
 import UnlockModal from "@/views/UnlockModal.vue";
 import { encrypt, getCryptoParams } from "@/utils/webCrypto";
+import { openSetPasswordModal } from "@/utils/storageEncryption";
 
 import { clipboardOutline } from "ionicons/icons";
 import { getFromMnemonic, getRandomPk } from "@/utils/wallet";
@@ -257,7 +260,6 @@ const onAddAccount = async () => {
     // 2. Prepare wallet and data
     const wallet = new ethers.Wallet(pk.value);
     const accounts = await getAccountsData();
-    const settings = await getSettingsData();
     
     // 3. Check for duplicate account
     if (accounts?.find((account) => account.address === wallet.address)) {
@@ -266,20 +268,20 @@ const onAddAccount = async () => {
       return;
     }
     
-    // 4. Handle encryption if enabled
-    let cryptoParams = null;
-    if (settings?.enableStorageEnctyption) {
-      const pass = await openModal();
-      if (!pass) {
-        alertMsg.value = "Cannot add account without encryption password.";
-        alertOpen.value = true;
-        return;
-      }
-      cryptoParams = await getCryptoParams(pass);
+    // 4. Encryption is mandatory: unlock with the existing password, or create
+    // one when this is the first account (this also encrypts any legacy keys)
+    const pass = (await hasEncryptionPassword())
+      ? await openModal()
+      : await openSetPasswordModal();
+    if (!pass) {
+      alertMsg.value = "Cannot add account without encryption password.";
+      alertOpen.value = true;
+      return;
     }
+    const cryptoParams = await getCryptoParams(pass);
     
     
-    // 6. Prepare account data
+    // 6. Prepare account data (stored with encPk only)
     const accountData = await buildAccountData(wallet, cryptoParams);
     
     // 7. Save account(s)
@@ -287,6 +289,8 @@ const onAddAccount = async () => {
     
     // Always save the main account
     savePromises.push(saveAccount(accountData));
+    // The wallet was just unlocked: keep the new key in the session store
+    savePromises.push(addUnlockedPks([{ address: accountData.address, pk: pk.value }]));
     
     // If no accounts exist yet, also set as selected
     if (!accounts || accounts.length === 0) {
@@ -338,30 +342,16 @@ const getAccountsData = async (): Promise<Account[] | undefined> => {
   return await accountsProm;
 };
 
-const getSettingsData = async (): Promise<Settings | undefined> => {
-  if (!settingsProm) {
-    settingsProm = getSettings();
-  }
-  return await settingsProm;
-};
-
 const buildAccountData = async (
   wallet: ethers.Wallet,
-  cryptoParams: any | null
+  cryptoParams: { key: CryptoKey; iv: any }
 ): Promise<Account> => {
+  // The plaintext key is never persisted, only its encrypted form
   const baseAccount: Partial<Account> = {
     address: wallet.address,
     name: name.value,
-    pk: pk.value,
+    encPk: await encrypt(pk.value, cryptoParams),
   };
-  
-  // Handle encryption
-  if (cryptoParams) {
-    baseAccount.encPk = await encrypt(pk.value, cryptoParams);
-  } else {
-    baseAccount.encPk = "";
-  }
-  
   
   return baseAccount as Account;
 };

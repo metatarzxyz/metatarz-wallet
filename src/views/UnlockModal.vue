@@ -102,7 +102,7 @@ import {
   modalController,
   IonLoading,
 } from "@ionic/vue";
-import { getAccounts, replaceAccounts, saveSelectedAccount, markWalletActivity } from "@/utils/platform";
+import { getStoredAccounts, setUnlockedPks, markWalletActivity } from "@/utils/platform";
 import { decrypt, getCryptoParams } from "@/utils/webCrypto";
 import { unlockModalStateSubscribe } from "@/utils/unlockStore";
 
@@ -123,17 +123,19 @@ const close = () => {
 const unlock = async () => {
   try {
     loading.value = true;
-    let accounts = await getAccounts();
+    const accounts = (await getStoredAccounts()).filter((a) => a.encPk);
+    if (!accounts.length) {
+      throw new Error("No encrypted accounts");
+    }
     const cryptoParams = await getCryptoParams(mpPass.value);
-    const accProm = accounts.map(async (a) => {
-      if (a.encPk) {
-        a.pk = await decrypt(a.encPk, cryptoParams);
-      }
-      return a;
-    });
-    accounts = await Promise.all(accProm);
-    await replaceAccounts(accounts);
-    await saveSelectedAccount(accounts[0]);
+    const unlocked = await Promise.all(
+      accounts.map(async (a) => ({
+        address: a.address,
+        pk: await decrypt(a.encPk, cryptoParams),
+      }))
+    );
+    // Decrypted keys are kept in the memory-only session store, never on disk
+    await setUnlockedPks(unlocked);
     await markWalletActivity();
     loading.value = false;
     return modalController?.dismiss(mpPass.value, "confirm");

@@ -149,12 +149,19 @@ const addDefaultNetworksOnInstall = async () => {
      
 }
 
+// Decrypted keys live in chrome.storage.session: keep it out of content scripts
+// (TRUSTED_CONTEXTS is the default, set explicitly so it is never widened).
+chrome.storage.session.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => {});
+
 chrome.runtime.onInstalled.addListener(() => {
     enableRightClickPasteAddr();
     reInjectContentScripts();
     addDefaultNetworksOnInstall();
     // Drop any Farcaster API token cached by the removed Farcaster feature
     chrome.storage.local.remove('fcAuthToken').catch(() => {});
+    // Lock on install/update; also removes plaintext keys that older versions
+    // left in chrome.storage.local next to the encrypted ones
+    clearPk().catch((e) => console.warn('Lock on install failed', e));
     console.info('Service worker installed version', chrome.runtime.getManifest().version);
     if (chrome.runtime.lastError) {
         console.warn("Whoops.. " + chrome.runtime.lastError.message);

@@ -4,7 +4,8 @@ import type { Ref } from 'vue'
 const pottentialMissingSettings = ['copyLowerCaseAddress']
 
 const defaultSettings = {
-    enableStorageEnctyption: false,
+    // Storage encryption is mandatory; kept as a setting for older installs.
+    enableStorageEnctyption: true,
     encryptAfterEveryTx: false,
     lockOutEnabled: false,
     lockOutPeriod: 2,
@@ -34,7 +35,54 @@ export const storageGet = async (key: string): Promise<{ [key: string]: any }> =
 }
 
 export const storageWipe = async (): Promise<void> => {
-    await chrome.storage.local.clear()
+    await Promise.all([chrome.storage.local.clear(), chrome.storage.session.clear()])
+}
+
+// Decrypted private keys never touch chrome.storage.local. After unlock they are
+// kept only in chrome.storage.session (memory-only, wiped on browser restart and
+// not readable by content scripts with the default TRUSTED_CONTEXTS access level),
+// keyed by lowercase address. Accounts in chrome.storage.local carry only encPk.
+const SESSION_PKS_KEY = 'unlockedPks'
+
+type UnlockedPks = { [address: string]: string }
+
+const getUnlockedPks = async (): Promise<UnlockedPks> => {
+    return (await chrome.storage.session.get(SESSION_PKS_KEY))?.[SESSION_PKS_KEY] ?? {}
+}
+
+/** Replaces the set of unlocked (decrypted) keys held in the session store. */
+export const setUnlockedPks = async (accounts: { address: string, pk: string }[]): Promise<void> => {
+    const pks = {} as UnlockedPks
+    accounts.forEach(a => {
+        if (a?.address && a?.pk) pks[a.address.toLowerCase()] = a.pk
+    })
+    await chrome.storage.session.set({ [SESSION_PKS_KEY]: pks })
+}
+
+/** Adds decrypted keys to the session store (e.g. just-added accounts). */
+export const addUnlockedPks = async (accounts: { address: string, pk: string }[]): Promise<void> => {
+    const pks = await getUnlockedPks()
+    accounts.forEach(a => {
+        if (a?.address && a?.pk) pks[a.address.toLowerCase()] = a.pk
+    })
+    await chrome.storage.session.set({ [SESSION_PKS_KEY]: pks })
+}
+
+// Fills account.pk from the session store. Accounts that still have no encPk
+// (installs not yet migrated to mandatory encryption) keep their legacy pk.
+const withSessionPk = (account: Account, pks: UnlockedPks): Account => {
+    if (!account || !account.address) return account
+    if (!account.encPk) return { ...account, pk: account.pk ?? '' }
+    return { ...account, pk: pks[account.address.toLowerCase()] ?? '' }
+}
+
+// Removes the plaintext key before an account is written to chrome.storage.local.
+// A legacy account without encPk keeps its pk so it is not lost before migration.
+const toStoredAccount = (account: Account): Account => {
+    if (!account || !account.encPk) return account
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { pk, ...stored } = account
+    return stored as Account
 }
 
 /**
@@ -88,27 +136,74 @@ export const replaceContacts = async (contacts: Contact[]): Promise<void> => {
     await storageSave('contacts', contacts)
 }
 
-export const getAccounts = async (): Promise<Account[]> => {
+// Accounts as stored in chrome.storage.local (no decrypted keys).
+export const getStoredAccounts = async (): Promise<Account[]> => {
     return (await storageGet('accounts')).accounts ?? [] as Account[]
 }
 
+export const getAccounts = async (): Promise<Account[]> => {
+    const [accounts, pks] = await Promise.all([getStoredAccounts(), getUnlockedPks()])
+    return accounts.map(a => withSessionPk(a, pks))
+}
+
 export const saveAccount = async (account: Account): Promise<void> => {
-    const savedAccounts = await getAccounts()
-    await storageSave('accounts', [account, ...savedAccounts])
+    const savedAccounts = await getStoredAccounts()
+    await replaceAccounts([account, ...savedAccounts])
 }
 
 export const replaceAccounts = async (accounts: Account[]): Promise<void> => {
-    await storageSave('accounts', accounts)
+    await storageSave('accounts', accounts.map(toStoredAccount))
 }
 
 
-export const getSelectedAccount = async (): Promise<Account> => {
+// Selected account as stored in chrome.storage.local (no decrypted key).
+export const getStoredSelectedAccount = async (): Promise<Account> => {
     return (await storageGet('selectedAccount'))?.selectedAccount ?? null as unknown as Account
+}
+
+export const getSelectedAccount = async (): Promise<Account> => {
+    const [selectedAccount, pks] = await Promise.all([getStoredSelectedAccount(), getUnlockedPks()])
+    return withSessionPk(selectedAccount, pks)
 }
 
 
 export const saveSelectedAccount = async (selectedAccount: Account): Promise<void> => {
-    await storageSave('selectedAccount', selectedAccount )
+    await storageSave('selectedAccount', toStoredAccount(selectedAccount))
+}
+
+/**
+ * True when an install still has accounts that are not encrypted at rest
+ * (created before encryption became mandatory, or with encryption disabled),
+ * so the user must set a password before the wallet can be used.
+ */
+export const needsEncryptionSetup = async (): Promise<boolean> => {
+    const [accounts, settings] = await Promise.all([getStoredAccounts(), getSettings()])
+    return accounts.length > 0 && (!settings.enableStorageEnctyption || accounts.some(a => !a.encPk && a.pk))
+}
+
+/** True when an encryption password was already set (accounts carry encPk). */
+export const hasEncryptionPassword = async (): Promise<boolean> => {
+    const [accounts, settings] = await Promise.all([getStoredAccounts(), getSettings()])
+    return !!settings.enableStorageEnctyption && accounts.some(a => !!a.encPk)
+}
+
+// Drops any plaintext pk left in chrome.storage.local next to an encPk
+// (written by older versions while the wallet was unlocked). Skipped while an
+// older install still has encryption disabled: there the plaintext key is the
+// usable copy until the forced password setup re-encrypts it.
+export const stripPlaintextPks = async (): Promise<void> => {
+    const [accounts, selectedAccount, settings] = await Promise.all([
+        getStoredAccounts(),
+        getStoredSelectedAccount(),
+        getSettings()
+    ])
+    if (!settings.enableStorageEnctyption) return
+    if (accounts.some(a => a.encPk && 'pk' in a)) {
+        await replaceAccounts(accounts)
+    }
+    if (selectedAccount?.encPk && 'pk' in selectedAccount) {
+        await saveSelectedAccount(selectedAccount)
+    }
 }
 
 export const setPrices = async (prices: Prices): Promise<void> => {
@@ -278,16 +373,10 @@ export const smallRandomString = (size = 7) => {
     }
 }
 
+// Locks the wallet: forgets all decrypted keys.
 export const clearPk = async (): Promise<void> => {
-    let accounts = await getAccounts()
-    const accProm = accounts.map(async a => {
-        if(a.encPk) {
-            a.pk = ''
-        }
-      return a
-    })
-    accounts = await Promise.all(accProm)
-    await Promise.all([replaceAccounts(accounts), saveSelectedAccount(accounts[0])])
+    await chrome.storage.session.remove(SESSION_PKS_KEY)
+    await stripPlaintextPks()
 }
 
 // Lossless UTF-8 <-> hex helpers used to pass data to popups via the URL.

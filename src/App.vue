@@ -9,6 +9,7 @@ import { IonApp, IonRouterOutlet } from "@ionic/vue";
 import { onBeforeMount, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getSettings } from "@/utils/platform";
+import { enforceStorageEncryption } from "@/utils/storageEncryption";
 import { getSelectedAddress } from "@/utils/wallet";
 import type { RequestArguments } from "@/extension/types";
 
@@ -123,5 +124,8 @@ onMounted(() => {
       router.push({ path: "/" });
     }
   }
+  // Private keys must never stay unencrypted at rest: installs from before
+  // encryption became mandatory have to set a password before continuing.
+  enforceStorageEncryption().catch((e) => console.error("Encryption setup failed", e));
 });
 </script>
