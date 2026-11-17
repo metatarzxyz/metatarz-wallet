@@ -178,6 +178,31 @@
         </ion-accordion>
         <ion-accordion>
           <ion-item slot="header" color="light">
+            <ion-label>Canton Connected Sites</ion-label>
+          </ion-item>
+          <div class="ion-padding" slot="content">
+            <ion-list>
+              <ion-item v-if="!cantonConnectedSites.length" class="no-inner-border">
+                <ion-label style="font-size: 0.85rem">No sites are connected to Canton.</ion-label>
+              </ion-item>
+              <ion-item v-for="site of cantonConnectedSites" :key="site">
+                <ion-label style="font-size: 0.85rem; word-break: break-all">{{
+                  site
+                }}</ion-label>
+                <ion-button slot="end" color="warning" @click="revokeCantonSite(site)"
+                  >Disconnect</ion-button
+                >
+              </ion-item>
+            </ion-list>
+            <p class="helper-label">
+              Sites connected through the Canton dApp API (CIP-0103) can see your Canton
+              parties and request Canton transactions and signatures. This is separate from
+              the EVM connection above.
+            </p>
+          </div>
+        </ion-accordion>
+        <ion-accordion>
+          <ion-item slot="header" color="light">
             <ion-label>Theme & Misc</ion-label>
           </ion-item>
           <div class="ion-padding" slot="content">
@@ -368,6 +393,8 @@ import {
   addUnlockedPks,
   getConnectedSites,
   removeConnectedSite,
+  getCantonConnectedSites,
+  removeCantonConnectedSite,
 } from "@/utils/platform";
 import { triggerListener } from "@/extension/listeners";
 import { openSetPasswordModal } from "@/utils/storageEncryption";
@@ -432,6 +459,20 @@ const revokeSite = async (origin: string) => {
   triggerListener("accountsChanged", []);
   await loadConnectedSites();
   toastMsg.value = "Site disconnected";
+  toastState.value = true;
+};
+
+const cantonConnectedSites = ref([] as string[]);
+
+const loadCantonConnectedSites = async () => {
+  cantonConnectedSites.value = Object.keys(await getCantonConnectedSites()).sort();
+};
+
+const revokeCantonSite = async (origin: string) => {
+  // The service worker sends statusChanged (disconnected) to the site's open tabs
+  await removeCantonConnectedSite(origin);
+  await loadCantonConnectedSites();
+  toastMsg.value = "Site disconnected from Canton";
   toastState.value = true;
 };
 
@@ -647,6 +688,7 @@ onIonViewWillEnter(async () => {
       }
     }),
     loadConnectedSites(),
+    loadCantonConnectedSites(),
   ]);
   loading.value = false;
 });
