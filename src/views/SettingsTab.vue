@@ -233,9 +233,9 @@
               and Ethers.
             </p>
             <p>
-              If a website does not detect Metatarz Wallet try selecting MetaMask, as this
-              wallet also implements the metamask API. It's recommended to not have
-              MetaMask enabled at the same time as Metatarz Wallet.
+              Metatarz Wallet implements the standard EIP-1193 provider API and announces
+              itself via EIP-6963. It's recommended to not have other browser wallets
+              enabled at the same time as Metatarz Wallet.
             </p>
             <p>
               Unlike most wallets, Metatarz Wallet has no ads, no analytics and no trackers.

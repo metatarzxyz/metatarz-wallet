@@ -45,13 +45,6 @@ const ProviderInfo: EIP6963ProviderInfo = {
     rdns: 'xyz.metatarz.wallet',
 }
 
-const ProviderInfoMetamask = {
-    "uuid": "5531e370-ec90-497b-a734-0268948ac6a4",
-    "name": "MetaMask",
-    "icon": 'data:image/png;base64,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',
-    "rdns": "io.metamask"
-}
-
 function loadEIP1193Provider(provider: any) {
 
     function announceProvider() {
@@ -62,12 +55,6 @@ function loadEIP1193Provider(provider: any) {
       window.dispatchEvent(
         new CustomEvent("eip6963:announceProvider", {
           detail: Object.freeze({ info, provider }),
-        })
-      );
-
-      window.dispatchEvent(
-        new CustomEvent("eip6963:announceProvider", {
-          detail: Object.freeze({ info: ProviderInfoMetamask, provider }),
         })
       );
     }
@@ -157,8 +144,7 @@ const sendMessage = (args: RequestArguments, ping = false, from = 'request'): Pr
 
 (function() {
       
-    class MetaMaskAPI {
-        isMetaMask = true
+    class MetatarzWalletAPI {
         isClWallet = true
         accounts = []
         _state = {accounts: [], isConnected: false, isUnlocked: true, initialized: true, isPermanentlyDisconnected: false}
@@ -394,13 +380,13 @@ const sendMessage = (args: RequestArguments, ping = false, from = 'request'): Pr
         }
     }
 
-      (window as any).MetaMaskAPI = MetaMaskAPI;
+      (window as any).MetatarzWalletAPI = MetatarzWalletAPI;
 
   })();
 
 
 
-const eth = new Proxy( new (window as any).MetaMaskAPI(), {
+const eth = new Proxy( new (window as any).MetatarzWalletAPI(), {
     deleteProperty: () => { return true },
     // set(obj, prop, value) {
     //     // Reflect.set(obj, prop, value);
@@ -514,8 +500,7 @@ Object.defineProperties(eth, {
 });
 
 const web3Shim = {
-    currentProvider: eth,
-    __isMetaMaskShim__: true
+    currentProvider: eth
 }
 
 const injectWallet = () => {

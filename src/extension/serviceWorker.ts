@@ -896,7 +896,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                     break
                 }
                 case 'web3_clientVersion': {
-                    sendResponse("MetaMask/v12.17.0")
+                    sendResponse(`MetatarzWallet/v${chrome.runtime.getManifest().version}`)
                     break
                 }
                 case 'wallet_getPermissions': {
