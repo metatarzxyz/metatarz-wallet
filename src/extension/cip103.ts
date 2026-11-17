@@ -215,16 +215,21 @@ const publicKeyMatches = (publicKey: string, address: string) => {
 }
 
 const getCantonAccounts = async (network: Network): Promise<CantonAccount[]> => {
-    const [accounts, selected, networks, cachedKeys] = await Promise.all([
+    const [accounts, selected, networks] = await Promise.all([
         getStoredAccounts(),
         getStoredSelectedAccount(),
         getNetworks(),
-        getCachedPublicKeys(),
     ])
     const eligible = (accounts ?? []).filter((a) =>
         a?.address && typeof a.cantonParty === 'string' && PARTY_RE.test(a.cantonParty) &&
         isActivatedOn(network, networks, a.address)
     )
+    let cachedKeys = await getCachedPublicKeys()
+    // A party activated while the wallet is unlocked has no cached key yet
+    if (eligible.some((a) => !cachedKeys[a.address.toLowerCase()])) {
+        await refreshCachedPublicKeys()
+        cachedKeys = await getCachedPublicKeys()
+    }
     const primaryAddress = (
         eligible.find((a) => a.address.toLowerCase() === (selected?.address ?? '').toLowerCase()) ?? eligible[0]
     )?.address
