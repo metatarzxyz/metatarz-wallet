@@ -125,9 +125,11 @@ const emit = (e: Cip103Event) => {
 // ---------------------------------------------------------------------------
 // Network
 
+// Used when the server does not report its network id (GET /api/v2/cip103/network
+// takes precedence). dApps such as cantex.io compare these ids case-sensitively.
 const FALLBACK_NETWORK_IDS: Record<number, string> = {
-    31337: 'canton:mainnet',
-    30337: 'canton:testnet',
+    31337: 'canton:MainNet',
+    30337: 'canton:TestNet',
 }
 
 const middlewareUrl = (network: Network) => (network?.rpc ?? '').replace(/\/+$/, '')
@@ -152,7 +154,7 @@ const networkInfoCache = new Map<string, { at: number, ttl: number, info: Networ
 
 const getNetworkInfo = async (network: Network): Promise<NetworkInfo> => {
     const url = middlewareUrl(network)
-    const fallbackId = FALLBACK_NETWORK_IDS[network.chainId] ?? 'canton:mainnet'
+    const fallbackId = FALLBACK_NETWORK_IDS[network.chainId] ?? FALLBACK_NETWORK_IDS[31337]
     const key = `${network.chainId}|${url}`
     const cached = networkInfoCache.get(key)
     if (cached && Date.now() - cached.at < cached.ttl) {
