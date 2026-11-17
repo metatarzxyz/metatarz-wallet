@@ -46,7 +46,8 @@ window.addEventListener("message", (event) => {
     }
     eventData.resId = event.data.resId
     eventData.type = "CLWALLET_CONTENT_MSG"
-    eventData.website = document?.location?.href ?? ''
+    // The service worker derives the requesting origin from the browser-provided sender
+    delete eventData.website
     if ((eventData?.method ?? 'x') in allowedMethods) {
       try {
         chrome?.runtime?.sendMessage(eventData, (res) => {
@@ -130,9 +131,26 @@ chrome.runtime?.onMessage?.addListener((message: any, sender, sendResponse) => {
     console.warn("Error receiving message:", chrome.runtime.lastError);
   }
   if (message.type === "CLWALLET_EXT_LISTENER") {
-    const data = { type: "CLWALLET_PAGE_LISTENER", data: message.data };
-    // console.log('data listener', data)
-    window.postMessage(data, "*");
+    // Events go to every tab and frame; the service worker decides, based on this
+    // frame's origin, whether it is connected and what it may see.
+    const listener = message?.data?.listener
+    try {
+      chrome.runtime.sendMessage({ type: "CLWALLET_CONTENT_MSG", method: "wallet_listenerData", params: [listener] }, (res) => {
+        if (chrome.runtime.lastError) {
+          console.warn("LOC9: Error sending message:", chrome.runtime.lastError);
+          return
+        }
+        if (!res?.deliver) {
+          return
+        }
+        const data = { type: "CLWALLET_PAGE_LISTENER", data: { listener, data: res.data } };
+        window.postMessage(data, "*");
+      })
+    } catch (e) {
+      if ((e as Error)?.message === 'Extension context invalidated') {
+        console.info('Error: Extension context invalidated. Ignoring.');
+      }
+    }
   }
   return true
 

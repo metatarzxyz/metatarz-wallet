@@ -14,7 +14,10 @@ import {
     enableRightClickPasteAddr,
     setSettings,
     replaceNetworks,
-    saveSelectedNetwork
+    saveSelectedNetwork,
+    isSiteConnected,
+    addConnectedSite,
+    removeConnectedSite
 } from '@/utils/platform';
 import {
     userApprove,
@@ -41,6 +44,7 @@ import {
 } from '@/utils/wallet'
 import type { Network, Networks, RequestArguments } from '@/extension/types'
 import { rpcError } from '@/extension/rpcConstants'
+import { triggerListener } from '@/extension/listeners'
 import { updatePrices } from '@/utils/gecko'
 import { allTemplateNets, noFoundNetworks } from '@/utils/networks'
 import { cyrb64Hash, stringify } from '@/utils/misc'
@@ -54,34 +58,93 @@ let notificationUrl: string
 const chainIdThrottle: { [key: string]: number } = {}
 const cache = new Map<string, { [key: string]: any }>()
 
-const dappNotConnectedResponse = (sendResponse: (a: any) => any) => {
-      sendResponse({
-        "jsonrpc": "2.0",
-        "method": "wallet_requestPermissions",
-        "params": [
-          {
-            "eth_accounts": {}
-          }
-        ],
-        "id": 0
-      })
+// Origin of the frame that sent the message, as reported by the browser.
+// Never taken from message data, which the page can influence.
+const getSenderOrigin = (sender: chrome.runtime.MessageSender): string => {
+    if (sender?.origin && sender.origin !== 'null') {
+        return sender.origin
+    }
+    try {
+        const origin = new URL(sender?.url ?? '').origin
+        return origin !== 'null' ? origin : ''
+    } catch {
+        return ''
+    }
 }
 
-const dappConnectedResponse = async (message: RequestArguments, sender: any, sendResponse: (a: any) => any) => {
-    const wallectConect = await walletConnect()
-    const response = [{
-        id: smallRandomString(21),
-        parentCapability: 'eth_accounts',
-        invoker: message?.website?.split('/').slice(0, 3).join('/') ?? '',
-        caveats: [{
-            type: 'restrictReturnedAccounts',
-            value: wallectConect.address
-        }],
-        date: Date.now(),
-    }]
-    const { data } = wallectConect
-    data.data.data = response as any
-    sendResponse(data)
+// Requests made by the wallet's own pages (popup, side panel), not by a website
+const isExtensionSender = (sender: chrome.runtime.MessageSender): boolean =>
+    sender?.id === chrome.runtime.id && (sender?.url ?? '').startsWith(chrome.runtime.getURL(''))
+
+// Origin shown to the user in approval popups ('' for the wallet's own pages)
+const requestOrigin = (sender: chrome.runtime.MessageSender): string =>
+    isExtensionSender(sender) ? '' : getSenderOrigin(sender)
+
+const isAuthorized = async (sender: chrome.runtime.MessageSender): Promise<boolean> =>
+    isExtensionSender(sender) || await isSiteConnected(getSenderOrigin(sender))
+
+// Methods that need a connected site (EIP-1193 4100 Unauthorized otherwise)
+const authorizedOnlyMethods = new Set([
+    'eth_sendTransaction',
+    'signTypedData',
+    'eth_signTypedData',
+    'signTypedData_v1',
+    'eth_signTypedData_v1',
+    'signTypedData_v3',
+    'eth_signTypedData_v3',
+    'signTypedData_v4',
+    'eth_signTypedData_v4',
+    'personal_sign',
+    'eth_sign',
+    'wallet_switchEthereumChain',
+    'wallet_addEthereumChain',
+])
+
+const permissionsResponse = async (origin: string) => [{
+    id: smallRandomString(21),
+    parentCapability: 'eth_accounts',
+    invoker: origin,
+    caveats: [{
+        type: 'restrictReturnedAccounts',
+        value: await getSelectedAddress()
+    }],
+    date: Date.now(),
+}]
+
+// One approval popup per origin; concurrent requests share its outcome
+const pendingConnections = new Map<string, Promise<void>>()
+
+const requestConnection = (message: RequestArguments, sender: chrome.runtime.MessageSender): Promise<void> => {
+    const origin = getSenderOrigin(sender)
+    if (!origin) {
+        return Promise.reject(new Error('Unknown origin'))
+    }
+    const pending = pendingConnections.get(origin)
+    if (pending) {
+        return pending
+    }
+    const request = (async () => {
+        const param = strToHex(JSON.stringify({ origin, subframe: (sender?.frameId ?? 0) !== 0 }))
+        await new Promise((resolve, reject) => {
+            chrome.windows.create({
+                height: 550,
+                width: 400,
+                url: chrome.runtime.getURL(`index.html?route=connect&param=${param}&rid=${String(message?.resId ?? '')}&website=${strToHex(origin)}`),
+                type: 'popup'
+            }).then((win) => {
+                userReject[String(win?.id)] = reject
+                userApprove[String(win?.id)] = resolve
+                rIdWin[String(win?.id)] = String(message.resId)
+            }).catch(reject)
+        })
+        await addConnectedSite(origin)
+        // Let the site's other frames/tabs pick up the address
+        triggerListener('accountsChanged', null)
+    })().finally(() => {
+        pendingConnections.delete(origin)
+    })
+    pendingConnections.set(origin, request)
+    return request
 }
 
 const walletConnect = async (dataToSend: any = undefined) => {
@@ -344,7 +407,7 @@ const chainIdThrottleFn = async (website: string) => {
     return urlKey
 }
 
-const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: any) => any) => {
+const mainListener = (message: RequestArguments, sender: chrome.runtime.MessageSender, sendResponse: (a: any) => any) => {
     if (chrome.runtime.lastError) {
         console.info("Error receiving message:", chrome.runtime.lastError);
     }
@@ -359,6 +422,14 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                 message: 'Invalid request method'
             })
         } else {
+            if (authorizedOnlyMethods.has(message.method) && !(await isAuthorized(sender))) {
+                sendResponse({
+                    error: true,
+                    code: rpcError.UNAUTHORIZED,
+                    message: 'Unauthorized: connect this site to the wallet first (eth_requestAccounts)'
+                })
+                return
+            }
             // ETH API
             switch (message.method) {
                 case 'eth_call': {
@@ -640,9 +711,28 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                     }
                     break
                 }
-                case 'eth_requestAccounts':
+                case 'eth_requestAccounts': {
+                    try {
+                        if (!(await isAuthorized(sender))) {
+                            await requestConnection(message, sender)
+                        }
+                        sendResponse(await getSelectedAddress())
+                    } catch (e) {
+                        sendResponse({
+                            error: true,
+                            code: rpcError.USER_REJECTED,
+                            message: 'User rejected the connection request'
+                        })
+                        console.info('eth_requestAccounts rejected', e)
+                    }
+                    break
+                }
                 case 'eth_accounts': {
                     try {
+                        if (!(await isAuthorized(sender))) {
+                            sendResponse([])
+                            break
+                        }
                         const hash = cyrb64Hash('eth_accounts' + stringify(message?.params))
                         const cacheItem = cache.get(hash)
                         if (cacheItem &&  cacheItem?.time > Date.now() - 5e2) {
@@ -673,7 +763,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                                 break
                             }
                             const isNetVersion = message.method === 'net_version'
-                            const urlKey = await chainIdThrottleFn(message?.website ?? '')
+                            const urlKey = await chainIdThrottleFn(getSenderOrigin(sender))
                             const network = await getSelectedNetwork()
                             const chainId = network?.chainId ?? 1
                             const resp = isNetVersion ? chainId.toString() : `0x${chainId.toString(16)}`
@@ -739,13 +829,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                         let gWin: any
 
                         
-                        let webDomain = ''
-                        try {
-                            const url = new URL(message?.website ?? '')
-                            webDomain = url.hostname
-                        } catch {
-                            webDomain = ''
-                        }
+                        const webDomain = requestOrigin(sender)
 
                         await new Promise((resolve, reject) => {
                             chrome.windows.create({
@@ -789,7 +873,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                                 txHash: tx.hash,
                                 chainId: network.chainId,
                                 ...(network.explorer ? { txUrl: `${network.explorer.replace(/\/+$/, '')}/${isCanton ? 'updates' : 'tx'}/${tx.hash}` } : {}),
-                                webiste: (message?.website)
+                                webiste: requestOrigin(sender) || undefined
                             })
                             const notificationId = crypto.randomUUID()
                             if (network?.explorer) {
@@ -885,13 +969,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                             'eth_signTypedData_v4'].includes(message?.method);
                         const signMsgData = isTypedSigned ? String(message?.params?.[1] ?? '') : String(message?.params?.[0] ?? '');
 
-                        let webDomain = ''
-                        try {
-                            const url = new URL(message?.website ?? '')
-                            webDomain = url.hostname
-                        } catch {
-                            webDomain = ''
-                        }
+                        const webDomain = requestOrigin(sender)
 
                         await new Promise((resolve, reject) => {
                             chrome.windows.create({
@@ -931,6 +1009,10 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                 }
                 // NON Standard / metamask API
                 case 'eth_coinbase': {
+                    if (!(await isAuthorized(sender))) {
+                        sendResponse(null)
+                        break
+                    }
                     const account = await getSelectedAccount()
                     const address = account?.address ?? null
                     sendResponse(address)
@@ -945,20 +1027,35 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                     break
                 }
                 case 'wallet_getPermissions': {
-                    const isConnected = message.params?.[0]?.isConnected ?? false;
-                    if(isConnected) {
-                        await dappConnectedResponse(message, sender, sendResponse)
+                    if (await isAuthorized(sender)) {
+                        sendResponse(await permissionsResponse(getSenderOrigin(sender)))
                     } else {
-                        await dappNotConnectedResponse(sendResponse)
+                        sendResponse([])
                     }
-
                     break
                 }
                 case 'wallet_requestPermissions': {
-                    await dappConnectedResponse(message, sender, sendResponse)
+                    try {
+                        if (!(await isAuthorized(sender))) {
+                            await requestConnection(message, sender)
+                        }
+                        sendResponse(await permissionsResponse(getSenderOrigin(sender)))
+                    } catch (e) {
+                        sendResponse({
+                            error: true,
+                            code: rpcError.USER_REJECTED,
+                            message: 'User rejected the permission request'
+                        })
+                        console.info('wallet_requestPermissions rejected', e)
+                    }
                     break
                 }
                 case 'wallet_revokePermissions': {
+                    const origin = getSenderOrigin(sender)
+                    if (!isExtensionSender(sender) && await isSiteConnected(origin)) {
+                        await removeConnectedSite(origin)
+                        triggerListener('accountsChanged', [])
+                    }
                     const data = {
                         type: "CLWALLET_PAGE_LISTENER", data: {
                             listener: 'disconnect',
@@ -983,13 +1080,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                             sendResponse(null)
                         } else {
 
-                            let webDomain = ''
-                            try {
-                                const url = new URL(message?.website ?? '')
-                                webDomain = url.hostname
-                            } catch {
-                                webDomain = ''
-                            }
+                            const webDomain = requestOrigin(sender)
 
                             await new Promise((resolve, reject) => {
                                 chrome.windows.create({
@@ -1049,7 +1140,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                                     chrome.windows.create({
                                         height: 550,
                                         width: 400,
-                                        url: chrome.runtime.getURL(`index.html?route=request-network&param=${strToHex(JSON.stringify({ ...{ website: message?.website ?? '' }, ...(message?.params?.[0] ?? {}) }) ?? '')}&rid=${String(message?.resId ?? '')}`),
+                                        url: chrome.runtime.getURL(`index.html?route=request-network&param=${strToHex(JSON.stringify({ ...(message?.params?.[0] ?? {}), website: requestOrigin(sender) }) ?? '')}&rid=${String(message?.resId ?? '')}`),
                                         type: 'popup'
                                     }).then((win) => {
                                         userReject[String(win?.id)] = reject
@@ -1072,7 +1163,27 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                 }
                 // internal messeges
                 case 'wallet_connect': {
-                    sendResponse((await walletConnect()).data)
+                    // Automatic page-load handshake: only connected sites get the address
+                    const { data } = await walletConnect()
+                    if (!(await isAuthorized(sender))) {
+                        data.data.address = []
+                    }
+                    sendResponse(data)
+                    break
+                }
+                case 'wallet_listenerData': {
+                    // Asked by the content script of every frame when the wallet emits an
+                    // event; the payload depends on the frame's own (browser-reported) origin
+                    const listener = message?.params?.[0]
+                    const authorized = await isAuthorized(sender)
+                    if (listener === 'accountsChanged') {
+                        sendResponse({ deliver: true, data: authorized ? await getSelectedAddress() : [] })
+                    } else if (listener === 'chainChanged' && authorized) {
+                        const network = await getSelectedNetwork()
+                        sendResponse({ deliver: true, data: numToHexStr(network?.chainId ?? 0) })
+                    } else {
+                        sendResponse({ deliver: false })
+                    }
                     break
                 }
                 case 'wallet_approve': {

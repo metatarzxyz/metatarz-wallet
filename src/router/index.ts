@@ -13,6 +13,10 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/SignMessage.vue'),
   },
   {
+    path: '/connect/:rid/:param/:website',
+    component: () => import('@/views/ConnectSite.vue'),
+  },
+  {
     path: '/sign-tx/:rid/:param/:website',
     component: () => import('@/views/SignTx.vue'),
   },

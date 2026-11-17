@@ -1,4 +1,4 @@
-import type { Network, Account, Prices, Settings, Networks, HistoryItem, ContractActions, ContractAction, Contact } from '@/extension/types'
+import type { Network, Account, Prices, Settings, Networks, HistoryItem, ContractActions, ContractAction, Contact, ConnectedSites } from '@/extension/types'
 import type { Ref } from 'vue'
 
 const pottentialMissingSettings = ['copyLowerCaseAddress']
@@ -231,6 +231,30 @@ export const addToHistory = async (historyItem: HistoryItem): Promise<void> => {
 
 export const wipeHistory = async (): Promise<void> => {
     await storageSave('history', [])
+}
+
+// Origins (scheme://host[:port]) the user approved to see the selected address
+// and request signatures (EIP-1102 / EIP-2255 style per-site connection).
+export const getConnectedSites = async (): Promise<ConnectedSites> => {
+    return (await storageGet('connectedSites'))?.connectedSites ?? {}
+}
+
+export const isSiteConnected = async (origin: string): Promise<boolean> => {
+    if (!origin) return false
+    return origin in (await getConnectedSites())
+}
+
+export const addConnectedSite = async (origin: string): Promise<void> => {
+    if (!origin) return
+    const sites = await getConnectedSites()
+    sites[origin] = { date: Date.now() }
+    await storageSave('connectedSites', sites)
+}
+
+export const removeConnectedSite = async (origin: string): Promise<void> => {
+    const sites = await getConnectedSites()
+    delete sites[origin]
+    await storageSave('connectedSites', sites)
 }
 
 export const getSettings = async (): Promise<Settings> => {

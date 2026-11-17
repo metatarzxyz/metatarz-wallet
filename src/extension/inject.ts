@@ -49,9 +49,6 @@ function loadEIP1193Provider(provider: any) {
 
     function announceProvider() {
       const info: EIP6963ProviderInfo = ProviderInfo
-      if(!provider.accounts?.length) {
-        return
-      }
       window.dispatchEvent(
         new CustomEvent("eip6963:announceProvider", {
           detail: Object.freeze({ info, provider }),
@@ -105,10 +102,6 @@ const sendMessage = (args: RequestArguments, ping = false, from = 'request'): Pr
 
     const newMessage =  async () => {
         return await new Promise((resolve, reject) => {
-        if (method === 'wallet_getPermissions') {
-            args.params = [{ isConnected: eth.isConnected() }]
-        }
-
         const data = { 
             type: "CLWALLET_CONTENT", 
             target: 'metamask-contentscript',

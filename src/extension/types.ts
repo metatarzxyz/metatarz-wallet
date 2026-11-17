@@ -85,6 +85,10 @@ export interface Settings {
     assetTransactionSimulationAlchemyKey: string
 }
 
+export interface ConnectedSites {
+    [origin: string]: { date: number }
+}
+
 export type listenerType = 'accountsChanged' | 'connect' | 'disconnect' | 'chainChanged'
 
 export interface HistoryItem {

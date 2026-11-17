@@ -96,6 +96,12 @@ onMounted(() => {
       });
       break;
     }
+    case "connect": {
+      router.push({
+        path: `/connect/${rid}/${param}/${website}`,
+      });
+      break;
+    }
     case "sign-tx": {
       router.push({
         path: `/sign-tx/${rid}/${param}/${website}`,

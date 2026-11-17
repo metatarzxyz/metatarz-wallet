@@ -154,6 +154,30 @@
         </ion-accordion>
         <ion-accordion>
           <ion-item slot="header" color="light">
+            <ion-label>Connected Sites</ion-label>
+          </ion-item>
+          <div class="ion-padding" slot="content">
+            <ion-list>
+              <ion-item v-if="!connectedSites.length" class="no-inner-border">
+                <ion-label style="font-size: 0.85rem">No sites are connected.</ion-label>
+              </ion-item>
+              <ion-item v-for="site of connectedSites" :key="site">
+                <ion-label style="font-size: 0.85rem; word-break: break-all">{{
+                  site
+                }}</ion-label>
+                <ion-button slot="end" color="warning" @click="revokeSite(site)"
+                  >Disconnect</ion-button
+                >
+              </ion-item>
+            </ion-list>
+            <p class="helper-label">
+              Connected sites can see your selected address and request signatures.
+              Disconnecting a site removes its access until you approve it again.
+            </p>
+          </div>
+        </ion-accordion>
+        <ion-accordion>
+          <ion-item slot="header" color="light">
             <ion-label>Theme & Misc</ion-label>
           </ion-item>
           <div class="ion-padding" slot="content">
@@ -342,7 +366,10 @@ import {
   isFirefox,
   hasEncryptionPassword,
   addUnlockedPks,
+  getConnectedSites,
+  removeConnectedSite,
 } from "@/utils/platform";
+import { triggerListener } from "@/extension/listeners";
 import { openSetPasswordModal } from "@/utils/storageEncryption";
 import { decrypt, encrypt, getCryptoParams } from "@/utils/webCrypto";
 import { Account } from "@/extension/types";
@@ -393,6 +420,20 @@ type ModalPromisePassword = null | {
 const modalGetPassword = ref(null) as Ref<ModalPromisePassword>;
 const noAccounts = ref(true);
 const radioTheme = ref("system") as Ref<"system" | "light" | "dark">;
+const connectedSites = ref([] as string[]);
+
+const loadConnectedSites = async () => {
+  connectedSites.value = Object.keys(await getConnectedSites()).sort();
+};
+
+const revokeSite = async (origin: string) => {
+  await removeConnectedSite(origin);
+  // Open tabs of the site get accountsChanged with [] from the service worker
+  triggerListener("accountsChanged", []);
+  await loadConnectedSites();
+  toastMsg.value = "Site disconnected";
+  toastState.value = true;
+};
 
 const wipeStorage = async () => {
   loading.value = true;
@@ -605,6 +646,7 @@ onIonViewWillEnter(async () => {
         noAccounts.value = false;
       }
     }),
+    loadConnectedSites(),
   ]);
   loading.value = false;
 });

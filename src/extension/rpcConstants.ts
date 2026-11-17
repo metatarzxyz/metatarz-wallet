@@ -1,5 +1,6 @@
 export const rpcError ={
     USER_REJECTED: 4001,
+    UNAUTHORIZED: 4100,
     INVALID_PARAM: -32602,
     INTERNAL_ERROR: -32603
 }
