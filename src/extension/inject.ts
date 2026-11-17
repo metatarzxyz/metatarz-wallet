@@ -488,6 +488,117 @@ Object.defineProperty((window as any), 'web3', {
   eth.initialConnect() 
 }
 
+// ---------------------------------------------------------------------------
+// CIP-0103 (Canton dApp API) discovery, detection and window.canton.
+// Requests and responses travel as window.postMessage frames
+// (SPLICE_WALLET_REQUEST / SPLICE_WALLET_RESPONSE) that the content script
+// relays to the service worker; this MAIN-world part only has to exist here
+// because CustomEvent details do not cross from the isolated world.
+const loadCantonProvider = () => {
+    const CANTON_ID = 'metatarz-wallet'
+
+    const announce = () => {
+        window.dispatchEvent(new CustomEvent('canton:announceProvider', {
+            detail: Object.freeze({ id: CANTON_ID, name: ProviderInfo.name, icon: ProviderInfo.icon, target: CANTON_ID }),
+        }))
+    }
+    window.addEventListener('canton:requestProvider', announce)
+
+    // ExtensionAdapter.detect(): answer SPLICE_WALLET_EXT_READY with an ACK
+    window.addEventListener('message', (event) => {
+        if (event.source != window) return
+        const data = event?.data
+        if (data?.type === 'SPLICE_WALLET_EXT_READY' && (!data.target || data.target === CANTON_ID)) {
+            window.postMessage({ type: 'SPLICE_WALLET_EXT_ACK', target: CANTON_ID }, '*')
+        }
+    })
+
+    // Another wallet already owns window.canton: keep it, still announce
+    if (!('canton' in window)) {
+        type CantonListener = (...args: unknown[]) => void
+        const cantonListeners = new Map<string, Set<CantonListener>>()
+        const pending = new Map<string, { resolve: (v: unknown) => void, reject: (e: unknown) => void }>()
+
+        window.addEventListener('message', (event) => {
+            if (event.source != window) return
+            const data = event?.data
+            if (data?.type === 'SPLICE_WALLET_RESPONSE') {
+                const response = data.response
+                const p = pending.get(response?.id)
+                if (!p) return
+                pending.delete(response.id)
+                if (response?.error) {
+                    const err = new Error(String(response.error?.message ?? 'Request failed')) as Error & { code?: number, data?: unknown }
+                    err.code = response.error?.code
+                    if (response.error?.data !== undefined) err.data = response.error.data
+                    p.reject(err)
+                } else {
+                    p.resolve(response?.result)
+                }
+            } else if (data?.type === 'SPLICE_WALLET_REQUEST' && data?.target === CANTON_ID && data?.request?.id == null) {
+                // Wallet-pushed CIP-0103 event
+                const method = data?.request?.method
+                if (typeof method === 'string') {
+                    canton.emit(method, data.request.params)
+                }
+            }
+        })
+
+        const canton = {
+            isMetatarzWallet: true,
+            request(args: { method: string, params?: unknown }): Promise<unknown> {
+                if (!args || typeof args.method !== 'string') {
+                    return Promise.reject(Object.assign(new Error('Invalid request'), { code: -32600 }))
+                }
+                // crypto.randomUUID is missing on insecure (http) pages
+                const id = typeof crypto?.randomUUID === 'function'
+                    ? crypto.randomUUID()
+                    : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`
+                return new Promise((resolve, reject) => {
+                    pending.set(id, { resolve, reject })
+                    window.postMessage({
+                        type: 'SPLICE_WALLET_REQUEST',
+                        request: { jsonrpc: '2.0', id, method: args.method, ...(args.params !== undefined ? { params: args.params } : {}) },
+                        target: CANTON_ID,
+                    }, '*')
+                })
+            },
+            on(event: string, listener: CantonListener) {
+                if (typeof listener !== 'function') return canton
+                if (!cantonListeners.has(event)) cantonListeners.set(event, new Set())
+                cantonListeners.get(event)!.add(listener)
+                return canton
+            },
+            removeListener(event: string, listener: CantonListener) {
+                cantonListeners.get(event)?.delete(listener)
+                return canton
+            },
+            emit(event: string, ...args: unknown[]) {
+                const set = cantonListeners.get(event)
+                if (!set?.size) return false
+                set.forEach((listener) => {
+                    try {
+                        listener(...args)
+                    } catch (e) {
+                        console.warn('canton listener error', e)
+                    }
+                })
+                return true
+            },
+        }
+        Object.freeze(canton)
+        Object.defineProperty(window, 'canton', { value: canton, writable: false, configurable: true })
+    }
+
+    announce()
+}
+
+try {
+    loadCantonProvider()
+} catch (e) {
+    console.warn('Metatarz Wallet: Canton provider failed to load', e)
+}
+
 (PQueuePromise).then(() => {
 injectWallet();
 loadEIP1193Provider(eth);
