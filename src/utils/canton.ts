@@ -58,6 +58,45 @@ export const getCantonTransferToken = (chainId: number, token: unknown): CantonT
     return CANTON_TRANSFER_TOKENS[token]
 }
 
+// Signed middleware auth messages have the form "<action>:<unix seconds>" (the
+// middleware also accepts milliseconds, but seconds are the protocol).
+// Registration messages are single use, so a timestamp is never reused here.
+let lastTimedMessageSec = 0
+const timedMessage = (action: string) => {
+    lastTimedMessageSec = Math.max(Math.floor(Date.now() / 1000), lastTimedMessageSec + 1)
+    return `${action}:${lastTimedMessageSec}`
+}
+
+type MiddlewareError = { error?: string, code?: number }
+
+// User-facing message for a middleware error response ({ error, code }).
+const cantonErrorMessage = (res?: MiddlewareError): string => {
+    const { error, code } = res ?? {}
+    switch (code) {
+        case 400:
+            if (error?.startsWith('too many pending')) {
+                return 'Too many pending Canton transactions. Wait a few minutes for them to expire, then try again.'
+            }
+            break
+        case 401:
+            if (error === 'registration signature already used') {
+                return 'This registration request was already submitted. Please try again.'
+            }
+            return 'The wallet signature was rejected as expired or invalid. Check that your device clock is correct and try again.'
+        case 403:
+            return 'Not authorized: ' + (error ?? 'request rejected')
+        case 404:
+        case 410:
+            return 'The prepared request expired or was already used. Please try again.'
+        case 409:
+            if (error === 'canton party already registered') {
+                return 'This Canton party is already registered to another account.'
+            }
+            break
+    }
+    return error ? 'Canton request failed: ' + error : 'Transaction failed. Try again later'
+}
+
 //send canton non-custodial transaction flow.
 export const sendCantonTransaction = async (params: any, type = "transfer", party?: string, pk?: string): Promise<TransactionResponse | undefined> => {
 
@@ -75,7 +114,7 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
         return
     }
 
-    const message = "transfer:" + Date.now()
+    const message = timedMessage("transfer")
 
     const signature = await signMsgWithPk(message, pk ? pk : account?.pk)
 
@@ -89,14 +128,12 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
         } : {}), type
     })
 
-    if (prepareResponse && prepareResponse?.code){
-        const code = prepareResponse?.code
-
-        if(code !== 409){
-            throw new Error('Transaction failed. Try again later')
+    if (prepareResponse?.code) {
+        // 409 on preapproval / merge delegation: it already exists, nothing to do.
+        if (prepareResponse.code === 409 && type !== 'transfer') {
+            return
         }
-
-
+        throw new Error(cantonErrorMessage(prepareResponse))
     }
     if (prepareResponse && prepareResponse?.transaction_hash) {
 
@@ -117,8 +154,8 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
             type,
         })
 
-        if (!executeResponse) {
-            throw new Error('Transaction failed. Try again later')
+        if (!executeResponse || executeResponse.code) {
+            throw new Error(cantonErrorMessage(executeResponse))
         }
 
 
@@ -126,6 +163,7 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
 
     }
 
+    throw new Error('Transaction failed. Try again later')
 
 
 
@@ -162,7 +200,7 @@ export const registerWallet = async (pk: string) => {
 
         //need signature + message
 
-        const msg = "registration:" + Date.now()
+        const msg = timedMessage("registration")
 
         const signature = await signMsgWithPk(msg, pk)
 
@@ -175,15 +213,20 @@ export const registerWallet = async (pk: string) => {
             })
         //fetch /register/prepare-topology
 
-        if (data && data?.error && data?.code == 403) {
+        if (!data || data.code) {
             return {
-                error: data?.error
+                error: cantonErrorMessage(data)
             }
         }
 
 
 
         if (!data?.user_exists) {
+            if (!data?.topology_hash || !data?.registration_token) {
+                return {
+                    error: 'Unexpected response from the Canton middleware'
+                }
+            }
 
             const topologySignature = await signHashDER(data?.topology_hash, pk)
 
@@ -198,6 +241,30 @@ export const registerWallet = async (pk: string) => {
                 public_key_fingerprint: data?.public_key_fingerprint,
                 registration_token: data?.registration_token
             })
+
+            // 409 means the user/party was already registered (e.g. by an earlier
+            // attempt). The response has no party: look it up with a fresh step 1.
+            if (registerData?.code === 409 && registerData.error !== 'canton party already registered') {
+                const existingMsg = timedMessage("registration")
+                const existing = await callRegisterTopology(url, {
+                    signature: await signMsgWithPk(existingMsg, pk),
+                    message: existingMsg,
+                    key_mode: 'external',
+                    canton_public_key: publicKey
+                })
+                if (!existing?.code && existing?.user_exists && existing?.party) {
+                    return {
+                        party: existing.party,
+                        fingerprint: existing.fingerprint
+                    }
+                }
+            }
+
+            if (!registerData?.party || registerData.code) {
+                return {
+                    error: cantonErrorMessage(registerData)
+                }
+            }
 
             return {
 
@@ -224,6 +291,18 @@ export const registerWallet = async (pk: string) => {
 
 }
 
+// Parses a middleware response; errors come back as { error, code }.
+async function readMiddlewareResponse(response: Response) {
+    const body = await response.json().catch(() => undefined)
+
+    if (!response.ok) {
+        console.error(`HTTP error! status: ${response.status}`);
+        return { error: body?.error ?? response.statusText, code: response.status }
+    }
+
+    return body
+}
+
 async function callRegister(url: string, params: any) {
     const response = await fetch(url + '/register', {
         method: "POST",
@@ -233,17 +312,7 @@ async function callRegister(url: string, params: any) {
         body: JSON.stringify(params),
     });
 
-    if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status}`);
-
-        if (response.status !== 409) {
-            //conflict error, user may already exist
-            return
-        }
-    }
-
-
-    return await response.json();
+    return await readMiddlewareResponse(response);
 }
 
 async function callPrepare(url: string, params: any) {
@@ -257,11 +326,7 @@ async function callPrepare(url: string, params: any) {
         body: JSON.stringify({ ...(params.type === 'transfer' ? { amount: params?.amount, to: params.to, token: params.token, ...(params.memo ? { memo: params.memo } : {}) } : {}), type: params.type }),
     });
 
-    if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status}`);
-    }
-
-    return await response.json();
+    return await readMiddlewareResponse(response);
 }
 
 async function callExecute(url: string, params: any) {
@@ -283,12 +348,7 @@ async function callExecute(url: string, params: any) {
             }),
     });
 
-    if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status}`);
-        return
-    }
-
-    return await response.json();
+    return await readMiddlewareResponse(response);
 }
 
 
@@ -301,17 +361,7 @@ async function callRegisterTopology(url: string, params: any) {
         body: JSON.stringify(params),
     });
 
-    if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status}`);
-
-        //user not whitelisted
-        if (response.status !== 403) {
-            return
-        }
-    }
-
-
-    return await response.json();
+    return await readMiddlewareResponse(response);
 }
 
 

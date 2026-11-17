@@ -484,6 +484,9 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
     return;
   } catch (e) {
     console.error(e);
+    alertMsg.value =
+      "Failed to activate " + symbol + ": " + (e instanceof Error ? e.message : String(e));
+    alertOpen.value = true;
   } finally {
     loading.value = false;
   }
