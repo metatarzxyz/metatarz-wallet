@@ -1179,12 +1179,14 @@ const mainListener = (message: RequestArguments, sender: chrome.runtime.MessageS
                 }
                 case 'wallet_listenerData': {
                     // Asked by the content script of every frame when the wallet emits an
-                    // event; the payload depends on the frame's own (browser-reported) origin
+                    // event; the payload depends on the frame's own (browser-reported) origin.
+                    // chainChanged goes to every frame (the chain id is public via eth_chainId);
+                    // accountsChanged only reveals the address to connected origins.
                     const listener = message?.params?.[0]
-                    const authorized = await isAuthorized(sender)
                     if (listener === 'accountsChanged') {
+                        const authorized = await isAuthorized(sender)
                         sendResponse({ deliver: true, data: authorized ? await getSelectedAddress() : [] })
-                    } else if (listener === 'chainChanged' && authorized) {
+                    } else if (listener === 'chainChanged') {
                         const network = await getSelectedNetwork()
                         sendResponse({ deliver: true, data: numToHexStr(network?.chainId ?? 0) })
                     } else {
