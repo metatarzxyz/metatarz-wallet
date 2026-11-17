@@ -104,10 +104,10 @@ const sendMessage = (args: RequestArguments, ping = false, from = 'request'): Pr
         return await new Promise((resolve, reject) => {
         const data = { 
             type: "CLWALLET_CONTENT", 
-            target: 'metamask-contentscript',
+            target: 'metatarz-contentscript',
             data: {
                 method,
-                name: 'metamask-provider', data: args, jsonrpc: '2.0', id: Number(resId.replace(/[A-Za-z]/g, '').slice(0, 10)) 
+                name: 'metatarz-provider', data: args, jsonrpc: '2.0', id: Number(resId.replace(/[A-Za-z]/g, '').slice(0, 10)) 
             },
             resId,
             from,
@@ -158,23 +158,11 @@ const sendMessage = (args: RequestArguments, ping = false, from = 'request'): Pr
         networkVersion = "137"
         selectedAddress = null
         autoRefreshOnNetworkChange = false
-        // Internal Simulate Metamask 
+        // EventEmitter-style fields some libraries read
         _events = {}
         _eventsCount = 2
-        _jsonRpcConnection = {}
         _log = {}
         _maxListeners = 10
-        _metamask = new Proxy({
-            isUnlocked: () => { 
-                return Promise.resolve(true)
-            },
-            requestBatch: () => {
-                // empty
-            },
-        }, {})
-        _rpcEngine = {
-            _events: {}, _eventsCount: 0, _maxListeners: undefined, _middleware: Array(4)
-        }
         initialConnect()  {
             sendMessage({
                 method: 'wallet_ready'
@@ -346,9 +334,6 @@ const sendMessage = (args: RequestArguments, ping = false, from = 'request'): Pr
         getMaxListeners()  {
             return 10
         }
-        _getExperimentalApi ()  {
-            return this._metamask
-        }
         eventNames () {
             return []
         }
@@ -357,17 +342,6 @@ const sendMessage = (args: RequestArguments, ping = false, from = 'request'): Pr
         }
         listeners() { return [] }
         rawListeners() { return [] }
-        // Internal Simulate Metamask 
-        _warnOfDeprecation() { return true }
-    
-        _rpcRequest() { return true }
-        _handleAccountsChanged() { return true }
-    
-        _handleChainChanged() { return true }
-        _handleConnect() { return true }
-        _handleDisconnect() { return true }
-        _handleStreamDisconnect() { return true }
-        _handleUnlockStateChanged() { return true }
         _sendSync () {
             console.warn('ERROR: Metatarz Wallet: Sync calling is deprecated and not supported')
         }

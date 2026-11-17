@@ -56,11 +56,11 @@ window.addEventListener("message", (event) => {
           }
           const id = Number(eventData.resId.replace(/[A-Za-z]/g, '').slice(0, 10))
           const data = {
-            target: 'metamask-inpage',
+            target: 'metatarz-inpage',
             type: "CLWALLET_PAGE",
             resId: eventData.resId,
             data: {
-              name: 'metamask-provider', data: {
+              name: 'metatarz-provider', data: {
                 jsonrpc: '2.0',
                 id,
                 result: res,
