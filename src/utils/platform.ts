@@ -68,6 +68,14 @@ export const addUnlockedPks = async (accounts: { address: string, pk: string }[]
     await chrome.storage.session.set({ [SESSION_PKS_KEY]: pks })
 }
 
+/** Removes a deleted account's decrypted key from the session store. */
+export const removeUnlockedPk = async (address: string): Promise<void> => {
+    if (!address) return
+    const pks = await getUnlockedPks()
+    delete pks[address.toLowerCase()]
+    await chrome.storage.session.set({ [SESSION_PKS_KEY]: pks })
+}
+
 // Fills account.pk from the session store. Accounts that still have no encPk
 // (installs not yet migrated to mandatory encryption) keep their legacy pk.
 const withSessionPk = (account: Account, pks: UnlockedPks): Account => {

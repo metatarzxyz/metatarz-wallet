@@ -110,6 +110,7 @@ import {
   clearPk,
   getSelectedAccount,
   saveSelectedAccount,
+  removeUnlockedPk,
 } from "@/utils/platform";
 import {
   IonContent,
@@ -171,6 +172,7 @@ const deleteAccount = async (address: string) => {
     accounts.value.splice(findIndex, 1);
     pArr.push(replaceAccounts([...accounts.value]));
   }
+  pArr.push(removeUnlockedPk(address));
   if (selectedAccount.address === address) {
     pArr.push(saveSelectedAccount(accounts.value[0]));
   }
