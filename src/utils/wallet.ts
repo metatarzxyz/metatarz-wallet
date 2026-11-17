@@ -1,6 +1,5 @@
 import { getNetworks, getSelectedAccount, getSelectedNetwork, numToHexStr } from '@/utils/platform';
 import { ethers } from "ethers"
-import { mainNets, testNets } from '@/utils/networks';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from "@noble/hashes/sha2.js";
 
@@ -24,11 +23,6 @@ export const getCurrentProvider = async () => {
     }
     provider = new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
     return { provider, network }
-}
-
-export const getOptimismProvider = async () => {
-    const network = mainNets[10]
-    return new ethers.JsonRpcProvider(network.rpc, ethers.Network.from(network.chainId), { staticNetwork: true, batchMaxCount: 6, polling: false })
 }
 
 export const getCantonProvider = async () => {

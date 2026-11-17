@@ -10,8 +10,6 @@
 
 This is an open source, NON-KYC, privacy-focused, EVM wallet browser extension implementation using Ethers, manifest version 3, Ionic, and Vue, first released on the Chrome Webstore in August 2022.
 
-ATM, it also includes some Farcaster-related features.
-
 For more info, you can check [docs website](https://metatarz-wallet.flashsoft.eu)
 
 ![Featured on Alchemy](/repo_res/alchemy.png?raw=true "Featured on Alchemy")

@@ -23,10 +23,6 @@
           <ion-item>Storage Encrypted, unlock to delete account.</ion-item>
           <ion-item>Closing will not delete the account.</ion-item>
         </ion-list>
-        <ion-list v-else-if="unlockType === 'farcaster'">
-          <ion-item>PK decription required to proceed.</ion-item>
-          <ion-item>Closing will reject the request.</ion-item>
-        </ion-list>
         <ion-list v-else-if="unlockType === 'addAccount'">
           <ion-item>Storage Encrypted, unlock to add account.</ion-item>
           <ion-item>Closing will not add the account.</ion-item>

@@ -153,6 +153,8 @@ chrome.runtime.onInstalled.addListener(() => {
     enableRightClickPasteAddr();
     reInjectContentScripts();
     addDefaultNetworksOnInstall();
+    // Drop any Farcaster API token cached by the removed Farcaster feature
+    chrome.storage.local.remove('fcAuthToken').catch(() => {});
     console.info('Service worker installed version', chrome.runtime.getManifest().version);
     if (chrome.runtime.lastError) {
         console.warn("Whoops.. " + chrome.runtime.lastError.message);

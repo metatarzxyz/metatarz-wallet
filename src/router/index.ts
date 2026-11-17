@@ -33,10 +33,6 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/RequestNetwork.vue'),
   },
   {
-    path: '/farcaster-actions',
-    component: () => import('@/views/FarcasterActions.vue'),
-  },
-  {
     path: '/personal-sign',
     component: () => import('@/views/PersonalSign.vue'),
   },

@@ -225,14 +225,6 @@ export const writeCAWipe = async (): Promise<void> => {
     await storageSave('write-actions', {})
 }
 
-export const setCachedFcAuthToken = async (token: string): Promise<void> => {
-    await storageSave('fcAuthToken', token)
-}
-
-export const getCachedFcAuthToken = async (): Promise<string> => {
-    return (await storageGet('fcAuthToken'))?.fcAuthToken ?? ''
-}
-
 
 export const blockLockout = async (): Promise<Settings> => {
     const settings = await getSettings()

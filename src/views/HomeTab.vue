@@ -179,16 +179,6 @@
       >
         <p class="blink-loading">Loading RPC pefromance...</p>
       </ion-item>
-      <!-- 
-      <ion-item style="margin-top: 0.3rem; margin-bottom: 0.3rem; text-align: center">
-        <ion-button
-          @click="goToFarcasterActions"
-          expand="block"
-          style="margin: auto; width: 98%; font-size: 0.8rem; padding: 0.6rem"
-          >Farcaster Wallet Actions</ion-button
-        >
-      </ion-item> -->
-
       <ion-item
         style="margin-top: 0.3rem; margin-bottom: 0.3rem; text-align: center"
       >
@@ -457,10 +447,6 @@ const goToAddAccount = () => {
 
 const goToAddNetwork = () => {
   router.push("/tabs/add-network");
-};
-
-const goToFarcasterActions = () => {
-  router.push("/farcaster-actions");
 };
 
 const goToPersonalSign = () => {
