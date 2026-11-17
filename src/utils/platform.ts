@@ -76,6 +76,14 @@ export const removeUnlockedPk = async (address: string): Promise<void> => {
     await chrome.storage.session.set({ [SESSION_PKS_KEY]: pks })
 }
 
+/** Decrypted key of one account from the session store ('' while locked). */
+export const getUnlockedPk = async (address: string): Promise<string> => {
+    if (!address) return ''
+    const account = (await getStoredAccounts()).find(a => a?.address?.toLowerCase() === address.toLowerCase())
+    if (!account) return ''
+    return withSessionPk(account, await getUnlockedPks()).pk ?? ''
+}
+
 // Fills account.pk from the session store. Accounts that still have no encPk
 // (installs not yet migrated to mandatory encryption) keep their legacy pk.
 const withSessionPk = (account: Account, pks: UnlockedPks): Account => {
@@ -263,6 +271,43 @@ export const removeConnectedSite = async (origin: string): Promise<void> => {
     const sites = await getConnectedSites()
     delete sites[origin]
     await storageSave('connectedSites', sites)
+}
+
+// Origins the user approved for the Canton dApp API (CIP-0103). Kept apart from
+// connectedSites: EVM and Canton approvals are granted and revoked independently.
+export const getCantonConnectedSites = async (): Promise<ConnectedSites> => {
+    return (await storageGet('cantonConnectedSites'))?.cantonConnectedSites ?? {}
+}
+
+export const isCantonSiteConnected = async (origin: string): Promise<boolean> => {
+    if (!origin) return false
+    return Object.prototype.hasOwnProperty.call(await getCantonConnectedSites(), origin)
+}
+
+export const addCantonConnectedSite = async (origin: string): Promise<void> => {
+    if (!origin) return
+    const sites = await getCantonConnectedSites()
+    sites[origin] = { date: Date.now() }
+    await storageSave('cantonConnectedSites', sites)
+}
+
+export const removeCantonConnectedSite = async (origin: string): Promise<void> => {
+    const sites = await getCantonConnectedSites()
+    if (!Object.prototype.hasOwnProperty.call(sites, origin)) return
+    delete sites[origin]
+    await storageSave('cantonConnectedSites', sites)
+}
+
+// Compressed secp256k1 public keys (hex, no 0x) of accounts, keyed by lowercase
+// address. Public keys are not secret; they are cached here when the wallet is
+// unlocked so Canton accounts can still be listed to connected sites while it is
+// locked. Readers must check that a key matches its address before using it.
+export const getCachedPublicKeys = async (): Promise<{ [address: string]: string }> => {
+    return (await storageGet('cantonPublicKeys'))?.cantonPublicKeys ?? {}
+}
+
+export const setCachedPublicKeys = async (keys: { [address: string]: string }): Promise<void> => {
+    await storageSave('cantonPublicKeys', keys)
 }
 
 export const getSettings = async (): Promise<Settings> => {

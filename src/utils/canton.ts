@@ -62,15 +62,15 @@ export const getCantonTransferToken = (chainId: number, token: unknown): CantonT
 // middleware also accepts milliseconds, but seconds are the protocol).
 // Registration messages are single use, so a timestamp is never reused here.
 let lastTimedMessageSec = 0
-const timedMessage = (action: string) => {
+export const timedMessage = (action: string) => {
     lastTimedMessageSec = Math.max(Math.floor(Date.now() / 1000), lastTimedMessageSec + 1)
     return `${action}:${lastTimedMessageSec}`
 }
 
-type MiddlewareError = { error?: string, code?: number }
+export type MiddlewareError = { error?: string, code?: number }
 
 // User-facing message for a middleware error response ({ error, code }).
-const cantonErrorMessage = (res?: MiddlewareError): string => {
+export const cantonErrorMessage = (res?: MiddlewareError): string => {
     const { error, code } = res ?? {}
     switch (code) {
         case 400:
@@ -358,6 +358,65 @@ async function callExecute(url: string, params: any) {
     return await readMiddlewareResponse(response);
 }
 
+
+// CIP-0103 (Canton dApp API) endpoints of the middleware. Errors come back as
+// { error, code } like the other middleware calls; a network failure throws.
+
+/** GET /api/v2/cip103/network: { enabled, network_id }. Public, no auth. */
+export async function callCip103Network(url: string): Promise<{ enabled?: boolean, network_id?: string } & MiddlewareError> {
+    const response = await fetch(url + '/api/v2/cip103/network', {
+        method: "GET",
+        signal: AbortSignal.timeout(8000),
+    });
+    return await readMiddlewareResponse(response);
+}
+
+type Cip103Auth = { message: string, sig: string }
+
+export type Cip103PrepareResponse = {
+    prepare_id: string
+    command_id: string
+    transaction_hash: string
+    prepared_transaction: string
+    hashing_scheme_version: string | number
+    expires_at: string
+} & MiddlewareError
+
+/** POST /api/v2/cip103/prepare with { request: JsPrepareSubmissionRequest }. */
+export async function callCip103Prepare(url: string, auth: Cip103Auth, request: unknown): Promise<Cip103PrepareResponse> {
+    const response = await fetch(url + '/api/v2/cip103/prepare', {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Signature": auth.sig,
+            "X-Message": auth.message
+        },
+        body: JSON.stringify({ request }),
+        signal: AbortSignal.timeout(60000),
+    });
+    return await readMiddlewareResponse(response);
+}
+
+export type Cip103ExecuteResponse = {
+    command_id: string
+    update_id: string
+    completion_offset: number | string
+} & MiddlewareError
+
+/** POST /api/v2/cip103/execute with the DER signature of the prepared transaction hash. */
+export async function callCip103Execute(url: string, auth: Cip103Auth, body: { prepare_id: string, signature: string, public_key: string }): Promise<Cip103ExecuteResponse> {
+    const response = await fetch(url + '/api/v2/cip103/execute', {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Signature": auth.sig,
+            "X-Message": auth.message
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120000),
+    });
+    return await readMiddlewareResponse(response);
+}
 
 async function callRegisterTopology(url: string, params: any) {
     const response = await fetch(url + '/register/prepare-topology', {
