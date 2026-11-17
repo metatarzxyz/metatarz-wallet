@@ -23,14 +23,14 @@
   "dependencies": {
     "@ionic/vue": "8.7.2",
     "@ionic/vue-router": "8.7.2",
-    "@noble/curves": "^2.4.0",
-    "@noble/hashes": "^2.4.0",
-    "@noble/secp256k1": "^3.1.0",
-    "core-js": "^3.45.0",
-    "ethers": "^6.15.0",
-    "p-queue": "^8.1.0",
-    "vue": "^3.5.18",
-    "vue-router": "^4.5.1"
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@noble/secp256k1": "3.2.0",
+    "core-js": "3.45.0",
+    "ethers": "6.15.0",
+    "p-queue": "8.1.0",
+    "vue": "3.5.18",
+    "vue-router": "4.5.1"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "2.2.0",
