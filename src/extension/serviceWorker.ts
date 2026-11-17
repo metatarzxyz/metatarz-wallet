@@ -741,7 +741,7 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                                 date: Date.now(),
                                 txHash: tx.hash,
                                 chainId: network.chainId,
-                                ...(network.explorer ? { txUrl: `${network.explorer}/${isCanton ? 'updates' : 'tx'}/${tx.hash.replace('//', '/')}` } : {}),
+                                ...(network.explorer ? { txUrl: `${network.explorer.replace(/\/+$/, '')}/${isCanton ? 'updates' : 'tx'}/${tx.hash}` } : {}),
                                 webiste: (message?.website)
                             })
                             const notificationId = crypto.randomUUID()

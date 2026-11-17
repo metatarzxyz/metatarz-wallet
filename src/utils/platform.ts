@@ -349,10 +349,18 @@ export const pasteToFocused = () => {
     }
 }
 
+/** Opens `url` in a new browser tab (works from popup and side panel). */
 export const openTab = (url: string) => {
-    chrome.tabs.create({
-        url
-      });
+    if (!url) return
+    try {
+        chrome.tabs.create({ url }).catch((err: unknown) => {
+            console.warn('chrome.tabs.create failed, using window.open', err)
+            window.open(url, '_blank', 'noopener,noreferrer')
+        })
+    } catch (err) {
+        // No chrome.tabs (e.g. non-extension context): fall back to window.open.
+        window.open(url, '_blank', 'noopener,noreferrer')
+    }
 }
 
 export const getVersion = () => chrome?.runtime?.getManifest()?.version ?? ''

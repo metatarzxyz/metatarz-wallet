@@ -40,7 +40,13 @@
               >
               <ion-item v-if="item.txUrl"
                 ><b style="margin-right: 0.5rem">ViewTx:</b>
-                <a href="#" @click="openTab(item.txUrl as string)">LINK</a></ion-item
+                <a
+                  :href="item.txUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  @click.prevent="openTab(item.txUrl as string)"
+                  >LINK</a
+                ></ion-item
               >
             </ion-list>
           </ion-item>

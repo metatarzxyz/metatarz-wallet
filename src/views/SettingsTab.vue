@@ -242,13 +242,12 @@
             </p>
             <p>
               Github Repo:
-              <a href="#" @click="openTab('https://github.com/metatarzxyz/metatarz-wallet')"
-                >LINK</a
+              <a href="https://github.com/metatarzxyz/metatarz-wallet" target="_blank" rel="noopener noreferrer" @click.prevent="openTab('https://github.com/metatarzxyz/metatarz-wallet')">LINK</a
               >
             </p>
             <p>
               Docs Website:
-              <a href="#" @click="openTab('https://wallet.metatarz.xyz')">LINK</a>
+              <a href="https://wallet.metatarz.xyz" target="_blank" rel="noopener noreferrer" @click.prevent="openTab('https://wallet.metatarz.xyz')">LINK</a>
             </p>
             <p>
               Support:

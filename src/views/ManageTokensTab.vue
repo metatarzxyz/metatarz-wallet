@@ -218,7 +218,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       name: "Canton USDC",
       logoUrl: getUrl("assets/chain-icons/canton-usdcx.webp"),
       activated: cantonNetworkTokens?.usdcx?.activated || false,
-      enabled: false,
+      enabled: true,
     },
     {
       address: "0xDE50000000000000000000000000000000000001",
