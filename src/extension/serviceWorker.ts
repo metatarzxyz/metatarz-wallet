@@ -52,6 +52,8 @@ import { cyrb64Hash, stringify } from '@/utils/misc'
 import { runMigrations } from '@/utils/network-migrations'
 import { getCantonTransferToken, isCantonChain, sendCantonTransaction } from '@/utils/canton';
 import { handleCip103Request, onCip103Event, toCip103Error, watchCip103State, type Cip103Event } from '@/extension/cip103';
+import { isWcOrigin } from '@/extension/wcConstants';
+import { handleWalletConnectUiRequest, startWalletConnectBridge } from '@/extension/wcBridge';
 
 // const METAMAKS_EXTENSION_ID = 'nkbihfbeogaeaoehlefnkodbefgpgknn'
 
@@ -66,13 +68,15 @@ const cache = new Map<string, { [key: string]: any }>()
 // them as unknown ('' = unauthorized) instead of deriving one from the URL,
 // which would let a sandboxed frame borrow its URL's connected origin.
 // The URL is only used when the browser does not report an origin (Firefox).
+// "walletconnect:" origins are reserved for WalletConnect sessions (wcBridge.ts)
+// and are never accepted from a sender.
 const getSenderOrigin = (sender: chrome.runtime.MessageSender): string => {
+    const usable = (origin: string) => (origin && origin !== 'null' && !isWcOrigin(origin) ? origin : '')
     if (sender?.origin !== undefined) {
-        return sender.origin && sender.origin !== 'null' ? sender.origin : ''
+        return usable(sender.origin)
     }
     try {
-        const origin = new URL(sender?.url ?? '').origin
-        return origin !== 'null' ? origin : ''
+        return usable(new URL(sender?.url ?? '').origin)
     } catch {
         return ''
     }
@@ -123,6 +127,9 @@ onCip103Event((event) => {
 })
 
 watchCip103State()
+
+// WalletConnect transport: offscreen document messages, events and session restore
+startWalletConnectBridge()
 
 const cip103EventFor = async (id: unknown, sender: chrome.runtime.MessageSender) => {
     const event = typeof id === 'string' ? cip103Events.get(id) : undefined
@@ -1233,12 +1240,24 @@ const mainListener = (message: RequestArguments, sender: chrome.runtime.MessageS
                     try {
                         const result = await handleCip103Request(
                             { method: String(method ?? ''), params },
-                            { origin: requestOrigin(sender), subframe: (sender?.frameId ?? 0) !== 0 }
+                            { origin: requestOrigin(sender), subframe: (sender?.frameId ?? 0) !== 0, transport: 'browser' }
                         )
                         sendResponse({ result: result === undefined ? null : result })
                     } catch (e) {
                         sendResponse({ error: toCip103Error(e) })
                     }
+                    break
+                }
+                case 'wc_status':
+                case 'wc_pair':
+                case 'wc_sessions':
+                case 'wc_disconnect': {
+                    // WalletConnect management, only from the wallet's own pages
+                    if (!isExtensionSender(sender)) {
+                        sendResponse({ error: true, code: rpcError.UNAUTHORIZED, message: 'Unauthorized' })
+                        break
+                    }
+                    sendResponse(await handleWalletConnectUiRequest(message.method, message?.params))
                     break
                 }
                 case 'wallet_approve': {

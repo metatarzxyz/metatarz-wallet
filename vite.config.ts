@@ -31,6 +31,8 @@ export default defineConfig({
       },
       input: {
         ['eval-sandbox']: 'eval-sandbox.html',
+        // WalletConnect host document (chrome.offscreen, Chromium only)
+        offscreen: 'src/extension/offscreen.html',
       },
     },
     sourcemap: false,

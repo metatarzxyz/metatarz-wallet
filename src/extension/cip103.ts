@@ -3,9 +3,9 @@
 // One transport-independent request handler: the browser-extension transport
 // (content script -> service worker, see serviceWorker.ts) calls
 // handleCip103Request() with the browser-reported origin of the requesting
-// frame; a future WalletConnect transport can call it with the session's peer
-// origin. Wallet-to-dApp events are published through onCip103Event(); each
-// transport decides how to deliver them.
+// frame; the WalletConnect transport (wcBridge.ts) calls it with the synthetic
+// origin "walletconnect:<session topic>". Wallet-to-dApp events are published
+// through onCip103Event(); each transport decides how to deliver them.
 //
 // ledgerApi is proxied through the wallet's middleware (POST
 // /api/v2/cip103/ledger-api), which allow-lists the endpoints and confines them
@@ -31,6 +31,7 @@ import {
 } from '@/utils/platform'
 import { rIdData, rIdWin, userApprove, userReject } from '@/extension/userRequest'
 import { signHashDER, signMsgWithPk } from '@/utils/wallet'
+import { isWcOrigin, type WcPeer, type WcVerify } from '@/extension/wcConstants'
 import {
     callCip103Execute,
     callCip103LedgerApi,
@@ -92,7 +93,31 @@ export interface Cip103Context {
     origin: string
     // True when the request comes from an embedded frame, shown in approval popups
     subframe: boolean
+    // 'walletconnect' only for requests of an approved WalletConnect session, whose
+    // origin is "walletconnect:<topic>". Browser origins can never take that form
+    // (the service worker refuses it from senders), and the two are checked to match.
+    transport?: 'browser' | 'walletconnect'
+    // WalletConnect peer, shown in approval popups instead of the synthetic origin
+    peer?: WcPeer & { verify: WcVerify }
 }
+
+const checkContext = (ctx: Cip103Context) => {
+    const wcOrigin = isWcOrigin(ctx.origin)
+    if (wcOrigin !== (ctx.transport === 'walletconnect') || (wcOrigin && !ctx.peer)) {
+        throw new Cip103Error(CIP103_ERRORS.UNAUTHORIZED, 'Unauthorized: invalid origin')
+    }
+}
+
+/** Origin as shown to the user and in the history (never the synthetic key). */
+const displayOrigin = (ctx: Cip103Context) =>
+    ctx.transport === 'walletconnect' ? `${ctx.peer?.url || ctx.peer?.name || 'Unknown dApp'} (WalletConnect)` : ctx.origin
+
+/** Fields every Canton approval popup gets to show who is asking. */
+const requesterInfo = (ctx: Cip103Context) => ({
+    origin: ctx.transport === 'walletconnect' ? (ctx.peer?.url ?? '') : ctx.origin,
+    subframe: ctx.subframe,
+    ...(ctx.transport === 'walletconnect' ? { via: 'walletconnect', peer: ctx.peer } : {}),
+})
 
 // ---------------------------------------------------------------------------
 // Events
@@ -379,13 +404,13 @@ const primaryOf = (s: State): CantonAccount => {
 
 const randomRid = () => crypto.randomUUID().replace(/-/g, '')
 
-const openApproval = (route: string, ctx: Cip103Context, param: unknown, data?: unknown, size = { width: 400, height: 550 }): Promise<void> => {
+export const openApproval = (route: string, ctx: Cip103Context, param: unknown, data?: unknown, size = { width: 400, height: 550 }): Promise<void> => {
     const rid = randomRid()
     return new Promise<void>((resolve, reject) => {
         chrome.windows.create({
             height: size.height,
             width: size.width,
-            url: chrome.runtime.getURL(`index.html?route=${route}&param=${strToHex(JSON.stringify(param))}&rid=${rid}&website=${strToHex(ctx.origin)}`),
+            url: chrome.runtime.getURL(`index.html?route=${route}&param=${strToHex(JSON.stringify(param))}&rid=${rid}&website=${strToHex(ctx.transport === 'walletconnect' ? '' : ctx.origin)}`),
             type: 'popup'
         }).then((win) => {
             const id = String(win?.id)
@@ -553,6 +578,7 @@ type ExecutedEvent = {
 
 const runPrepareExecute = async (
     origin: string,
+    historyOrigin: string,
     network: Network,
     signer: CantonAccount,
     request: Record<string, unknown>,
@@ -603,7 +629,7 @@ const runPrepareExecute = async (
                 txHash: event.payload.updateId,
                 chainId: network.chainId,
                 ...(network.explorer ? { txUrl: `${network.explorer.replace(/\/+$/, '')}/updates/${event.payload.updateId}` } : {}),
-                webiste: origin,
+                webiste: historyOrigin,
             }).catch(() => {})
         }
         return event
@@ -634,8 +660,7 @@ const prepareExecute = async (ctx: Cip103Context, params: unknown, wait: boolean
 
     await openApproval('canton-tx', ctx, { kind: 'tx' }, {
         kind: 'tx',
-        origin: ctx.origin,
-        subframe: ctx.subframe,
+        ...requesterInfo(ctx),
         networkId: s.info.networkId,
         party: signer.partyId,
         accountName: signer.account.name ?? '',
@@ -647,7 +672,7 @@ const prepareExecute = async (ctx: Cip103Context, params: unknown, wait: boolean
         rawJson,
     }, { width: 600, height: 760 })
 
-    const run = runPrepareExecute(ctx.origin, s.network, signer, request, commandId)
+    const run = runPrepareExecute(ctx.origin, displayOrigin(ctx), s.network, signer, request, commandId)
     if (wait) {
         return { tx: await run }
     }
@@ -668,8 +693,7 @@ const signMessage = async (ctx: Cip103Context, params: unknown) => {
     const signer = primaryOf(s)
     await openApproval('canton-sign', ctx, { kind: 'message' }, {
         kind: 'message',
-        origin: ctx.origin,
-        subframe: ctx.subframe,
+        ...requesterInfo(ctx),
         networkId: s.info.networkId,
         party: signer.partyId,
         accountName: signer.account.name ?? '',
@@ -683,7 +707,13 @@ const signMessage = async (ctx: Cip103Context, params: unknown) => {
         // signHashDER hashes its input with SHA-256 before signing, so it is given
         // the raw UTF-8 bytes of the message.
         const der = await signHashDER(ethers.hexlify(ethers.toUtf8Bytes(message)), wallet.privateKey)
-        return { signature: ethers.encodeBase64('0x' + der) }
+        const signature = ethers.encodeBase64('0x' + der)
+        if (ctx.transport === 'walletconnect') {
+            // canton_signMessage also returns the key, base64 of the 33-byte
+            // compressed secp256k1 public key (not Ed25519 as in the WC Canton docs)
+            return { signature, publicKey: ethers.encodeBase64(wallet.signingKey.compressedPublicKey) }
+        }
+        return { signature }
     } finally {
         await lockAfterUseIfConfigured()
     }
@@ -823,6 +853,7 @@ const ledgerApi = async (ctx: Cip103Context, params: unknown): Promise<unknown> 
 // Request handler
 
 export const handleCip103Request = async (req: Cip103Request, ctx: Cip103Context): Promise<unknown> => {
+    checkContext(ctx)
     switch (req?.method) {
         case 'status': {
             return statusOf(await getState(ctx.origin))
@@ -831,7 +862,7 @@ export const handleCip103Request = async (req: Cip103Request, ctx: Cip103Context
             return connectResult(await getState(ctx.origin))
         }
         case 'connect': {
-            if (!ctx.origin) {
+            if (!ctx.origin || ctx.transport === 'walletconnect') {
                 throw new Cip103Error(CIP103_ERRORS.UNAUTHORIZED, 'Unauthorized: unknown origin')
             }
             let s = await getState(ctx.origin)
@@ -886,6 +917,27 @@ export const handleCip103Request = async (req: Cip103Request, ctx: Cip103Context
         default: {
             throw new Cip103Error(CIP103_ERRORS.METHOD_NOT_FOUND, 'Method not found')
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WalletConnect session proposals
+
+export type CantonShareInfo = {
+    networkId: string
+    enabled: boolean
+    parties: { partyId: string, primary: boolean, name: string }[]
+}
+
+/** What a new connection would share: the active Canton network and its parties. */
+export const getCantonShareInfo = async (): Promise<CantonShareInfo | undefined> => {
+    const network = await getActiveCantonNetwork()
+    if (!network) return undefined
+    const [info, accounts] = await Promise.all([getNetworkInfo(network), getCantonAccounts(network)])
+    return {
+        networkId: info.networkId,
+        enabled: !(info.ok && !info.enabled),
+        parties: accounts.map((a) => ({ partyId: a.partyId, primary: a.primary, name: a.account.name ?? '' })),
     }
 }
 

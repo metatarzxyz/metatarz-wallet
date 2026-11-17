@@ -8,7 +8,30 @@
 
     <ion-content class="ion-padding">
       <ion-list v-if="req">
-        <ion-item>
+        <ion-item v-if="isWc">
+          <ion-text style="font-size: 0.9rem">
+            Request from:
+            <b>{{ req.peer?.name || "Unknown dApp" }}</b>
+            <div style="word-break: break-all">
+              <b>{{ req.peer?.url || "No URL given" }}</b>
+            </div>
+            <div style="font-size: 0.8rem; opacity: 0.8">via WalletConnect</div>
+          </ion-text>
+        </ion-item>
+        <ion-item v-if="isWc" :color="wcDanger ? 'danger' : undefined">
+          <ion-text style="font-size: 0.9rem">
+            WalletConnect Verify:
+            <b v-if="req.peer?.verify?.isScam">known scam domain</b>
+            <b v-else-if="req.peer?.verify?.validation === 'INVALID'"
+              >domain mismatch, this may not be {{ req.peer?.url }}</b
+            >
+            <ion-text v-else-if="req.peer?.verify?.validation === 'VALID'" color="success"
+              ><b>verified domain</b></ion-text
+            >
+            <ion-text v-else color="warning"><b>unverified</b></ion-text>
+          </ion-text>
+        </ion-item>
+        <ion-item v-else>
           <ion-text style="font-size: 0.9rem">
             Request from:
             <b style="word-break: break-all">{{ req.origin || "Unknown site" }}</b>
@@ -20,7 +43,7 @@
             address bar. Only approve if you trust this site.
           </ion-text>
         </ion-item>
-        <ion-item v-if="(req.origin ?? '').startsWith('http:')">
+        <ion-item v-if="!isWc && (req.origin ?? '').startsWith('http:')">
           <ion-text color="warning" style="font-size: 0.9rem">
             This site does not use a secure (https) connection.
           </ion-text>
@@ -102,7 +125,10 @@
         <ion-item>Auto-reject Timer:&nbsp;<b>{{ timerReject }}</b></ion-item>
         <ion-item class="no-inner-border">
           <ion-button @click="onCancel">Reject</ion-button>
-          <ion-button @click="onApprove">{{ kind === "tx" ? "Approve" : "Sign" }}</ion-button>
+          <ion-button v-if="wcDanger && !confirmDanger" color="danger" @click="confirmDanger = true"
+            >I understand the risk</ion-button
+          >
+          <ion-button v-else @click="onApprove">{{ kind === "tx" ? "Approve" : "Sign" }}</ion-button>
         </ion-item>
       </ion-list>
       <ion-list v-else>
@@ -149,6 +175,7 @@ import {
 } from "@/utils/platform";
 import UnlockModal from "@/views/UnlockModal.vue";
 import { setUnlockModalState } from "@/utils/unlockStore";
+import type { WcPeer, WcVerify } from "@/extension/wcConstants";
 
 // Request data comes from the service worker via wallet_get_data (keyed by this
 // popup's window), never from the URL, so long requests are shown losslessly.
@@ -168,6 +195,9 @@ type CantonRequest = {
   rawJson?: string;
   // message
   message?: string;
+  // WalletConnect requests: origin is the dApp's metadata URL
+  via?: "walletconnect";
+  peer?: WcPeer & { verify: WcVerify };
 };
 
 const route = useRoute();
@@ -182,6 +212,11 @@ try {
 const req = ref(null as CantonRequest | null);
 const kind = computed(() => req.value?.kind ?? routeKind);
 const loadError = ref("");
+const confirmDanger = ref(false);
+const isWc = computed(() => req.value?.via === "walletconnect");
+const wcDanger = computed(
+  () => isWc.value && (req.value?.peer?.verify?.isScam === true || req.value?.peer?.verify?.validation === "INVALID")
+);
 const loading = ref(false);
 const timerReject = ref(140);
 let interval: any;
@@ -236,7 +271,7 @@ const openModal = async () => {
 };
 
 const onApprove = async () => {
-  if (!req.value) return;
+  if (!req.value || (wcDanger.value && !confirmDanger.value)) return;
   loading.value = true;
   if (interval) {
     clearInterval(interval);

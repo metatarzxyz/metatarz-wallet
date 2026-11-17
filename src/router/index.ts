@@ -29,6 +29,10 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/CantonSign.vue'),
   },
   {
+    path: '/wc-proposal/:rid/:param/:website',
+    component: () => import('@/views/WcSessionProposal.vue'),
+  },
+  {
     path: '/switch-network/:rid/:param/:website',
     component: () => import('@/views/SwitchNetwork.vue'),
   },
@@ -108,6 +112,10 @@ const routes: Array<RouteRecordRaw> = [
       {
         path: 'deposit-token',
         component: () => import('@/views/DepositToken.vue'),
+      },
+      {
+        path: 'walletconnect',
+        component: () => import('@/views/WalletConnectTab.vue'),
       },
       {
         path: 'write-contract',

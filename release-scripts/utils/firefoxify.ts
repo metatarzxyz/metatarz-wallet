@@ -22,6 +22,9 @@ export const foxyfyManifest = async (writeFFManifest = true) => {
     // Remove Version name
     delete pkg.version_name
 
+    // No offscreen documents in Firefox: WalletConnect is disabled there
+    pkg.permissions = (pkg.permissions ?? []).filter((p: string) => p !== 'offscreen')
+
     // Remove sandbox page as is not supported
     delete pkg.sandbox
 

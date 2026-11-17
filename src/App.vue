@@ -63,8 +63,10 @@ const pageListener = (
         }
       }
     })();
+    return true;
   }
-  return true;
+  // Not for this page (e.g. WalletConnect offscreen traffic): leave it to its receiver
+  return false;
 };
 
 if (chrome?.runtime?.onMessage) {
@@ -117,6 +119,12 @@ onMounted(() => {
     case "canton-tx": {
       router.push({
         path: `/canton-tx/${rid}/${param}/${website}`,
+      });
+      break;
+    }
+    case "wc-proposal": {
+      router.push({
+        path: `/wc-proposal/${rid}/${param}/${website}`,
       });
       break;
     }

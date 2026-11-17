@@ -30,7 +30,8 @@
     "clipboardWrite",
     "contextMenus",
     "scripting",
-    "sidePanel"
+    "sidePanel",
+    "offscreen"
   ],
   "side_panel": {
     "default_path": "index.html"

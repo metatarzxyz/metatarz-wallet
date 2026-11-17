@@ -1,5 +1,6 @@
 import type { Network, Account, Prices, Settings, Networks, HistoryItem, ContractActions, ContractAction, Contact, ConnectedSites } from '@/extension/types'
 import type { Ref } from 'vue'
+import { isWcOrigin, wcTopicOf, type WcSessionRecord } from '@/extension/wcConstants'
 
 const pottentialMissingSettings = ['copyLowerCaseAddress']
 
@@ -279,23 +280,54 @@ export const getCantonConnectedSites = async (): Promise<ConnectedSites> => {
     return (await storageGet('cantonConnectedSites'))?.cantonConnectedSites ?? {}
 }
 
+// A WalletConnect session's origin key ("walletconnect:<topic>") is approved
+// while the session is in walletconnectSessions; it is never stored as a site.
 export const isCantonSiteConnected = async (origin: string): Promise<boolean> => {
     if (!origin) return false
+    if (isWcOrigin(origin)) {
+        const topic = wcTopicOf(origin)
+        return !!topic && Object.prototype.hasOwnProperty.call(await getWalletConnectSessions(), topic)
+    }
     return Object.prototype.hasOwnProperty.call(await getCantonConnectedSites(), origin)
 }
 
 export const addCantonConnectedSite = async (origin: string): Promise<void> => {
-    if (!origin) return
+    if (!origin || isWcOrigin(origin)) return
     const sites = await getCantonConnectedSites()
     sites[origin] = { date: Date.now() }
     await storageSave('cantonConnectedSites', sites)
 }
 
 export const removeCantonConnectedSite = async (origin: string): Promise<void> => {
+    if (isWcOrigin(origin)) {
+        await removeWalletConnectSession(wcTopicOf(origin))
+        return
+    }
     const sites = await getCantonConnectedSites()
     if (!Object.prototype.hasOwnProperty.call(sites, origin)) return
     delete sites[origin]
     await storageSave('cantonConnectedSites', sites)
+}
+
+// WalletConnect sessions approved for the Canton dApp API, keyed by session
+// topic. WalletKit keeps its own copy in the offscreen document; this record is
+// the wallet's permission: a session missing here is disconnected.
+export const getWalletConnectSessions = async (): Promise<Record<string, WcSessionRecord>> => {
+    return (await storageGet('walletconnectSessions'))?.walletconnectSessions ?? {}
+}
+
+export const setWalletConnectSession = async (record: WcSessionRecord): Promise<void> => {
+    if (!record?.topic) return
+    const sessions = await getWalletConnectSessions()
+    sessions[record.topic] = record
+    await storageSave('walletconnectSessions', sessions)
+}
+
+export const removeWalletConnectSession = async (topic: string): Promise<void> => {
+    const sessions = await getWalletConnectSessions()
+    if (!topic || !Object.prototype.hasOwnProperty.call(sessions, topic)) return
+    delete sessions[topic]
+    await storageSave('walletconnectSessions', sessions)
 }
 
 // Compressed secp256k1 public keys (hex, no 0x) of accounts, keyed by lowercase
