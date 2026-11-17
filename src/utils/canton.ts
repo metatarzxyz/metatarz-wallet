@@ -28,6 +28,36 @@ type ExecuteResponse struct {
 }
 
     */
+
+export const isCantonChain = (chainId?: number) => chainId === 31337 || chainId === 30337
+
+// Amount on the transfer wire is always an 18-decimal wei integer for every
+// instrument (middleware weiToCantonDecimal divides by 1e18).
+export const CANTON_TRANSFER_DECIMALS = 18
+
+type CantonTransferToken = { symbol: string, priceId?: string, fixedPrice?: number }
+
+// Instruments the wallet knows, keyed by the `token` value sent to /api/v2/transfer/prepare.
+// The middleware has no default: a missing token is rejected.
+const CANTON_TRANSFER_TOKENS: Record<string, CantonTransferToken> = {
+    Amulet: { symbol: 'CC', priceId: 'canton-network' },
+    USDCx: { symbol: 'USDCx', fixedPrice: 1 },
+    HANDL: { symbol: 'HANDL' },
+    CBTC: { symbol: 'CBTC', priceId: 'bitcoin' },
+    cETH: { symbol: 'cETH', priceId: 'ethereum' },
+    BETH: { symbol: 'BETH', priceId: 'ethereum' },
+}
+
+// cETH is disabled on Canton Testnet (see ManageTokensTab)
+const CANTON_TESTNET_EXCLUDED = ['cETH']
+
+export const getCantonTransferToken = (chainId: number, token: unknown): CantonTransferToken | undefined => {
+    if (!isCantonChain(chainId) || typeof token !== 'string') return undefined
+    if (!Object.prototype.hasOwnProperty.call(CANTON_TRANSFER_TOKENS, token)) return undefined
+    if (chainId === 30337 && CANTON_TESTNET_EXCLUDED.includes(token)) return undefined
+    return CANTON_TRANSFER_TOKENS[token]
+}
+
 //send canton non-custodial transaction flow.
 export const sendCantonTransaction = async (params: any, type = "transfer", party?: string, pk?: string): Promise<TransactionResponse | undefined> => {
 

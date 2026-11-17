@@ -69,9 +69,33 @@
           >${{ (dollarPrice * userBalance).toFixed(3) }}</span
         >
       </ion-item>
-      <ion-item> Contract: {{ contract }} </ion-item>
-      <ion-item v-if="memo"> Memo: {{ memo}} </ion-item>
-      <ion-item>
+      <template v-if="isCanton">
+        <ion-item>
+          <ion-label class="ion-text-wrap">
+            Token: <b>{{ cantonToken?.symbol ?? "Unknown" }}</b>
+            <span v-if="params?.token" style="opacity: 0.7"> ({{ params.token }})</span>
+          </ion-label>
+        </ion-item>
+        <ion-item>
+          <ion-label class="ion-text-wrap">
+            Amount: <b>{{ cantonAmount }} {{ cantonToken?.symbol ?? "" }}</b>
+            <span
+              style="font-size: 0.9rem; opacity: 0.7; margin-left: 1rem"
+              v-if="cantonTokenPrice > 0 && cantonAmountNum !== null"
+              >${{ (cantonTokenPrice * cantonAmountNum).toFixed(3) }}</span
+            >
+          </ion-label>
+        </ion-item>
+        <ion-item>
+          <ion-label class="ion-text-wrap">Recipient: <b>{{ contract }}</b></ion-label>
+        </ion-item>
+        <ion-item>
+          <ion-label class="ion-text-wrap">Memo: <b>{{ memo || "(none)" }}</b></ion-label>
+        </ion-item>
+      </template>
+      <ion-item v-if="!isCanton"> Contract: {{ contract }} </ion-item>
+      <ion-item v-if="memo && !isCanton"> Memo: {{ memo}} </ion-item>
+      <ion-item v-if="!isCanton">
         Tx Total Cost: {{ totalCost }}
         <span
           style="font-size: 0.9rem; opacity: 0.7; margin-left: 1rem"
@@ -79,7 +103,7 @@
           >${{ (dollarPrice * totalCost).toFixed(3) }}</span
         >
       </ion-item>
-      <ion-item>
+      <ion-item v-if="!isCanton">
         Gas Fee: {{ gasFee }}
         <span
           style="font-size: 0.9rem; opacity: 0.7; margin-left: 1rem"
@@ -87,14 +111,14 @@
           >${{ (dollarPrice * gasFee).toFixed(3) }}</span
         >
       </ion-item>
-      <ion-item> Tx value: {{ txValue }} </ion-item>
-      <ion-item>
+      <ion-item v-if="!isCanton"> Tx value: {{ txValue }} </ion-item>
+      <ion-item v-if="!isCanton">
         Gas Limit: {{ gasLimit }}
         <ion-button style="margin-left: 1rem" @click="gasLimitModal = true"
           >Set manually</ion-button
         >
       </ion-item>
-      <ion-item>
+      <ion-item v-if="!isCanton">
         Gas Price: {{ gasPrice }}
         <ion-button style="margin-left: 1rem" @click="gasPriceModal = true"
           >Set manually</ion-button
@@ -124,7 +148,7 @@
 
       <ion-item style="display: flex; justify-self: end" class="no-inner-border">
         <ion-button @click="onCancel">Cancel</ion-button>
-        <ion-button :disabled="insufficientBalance" @click="onSign">{{
+        <ion-button :disabled="insufficientBalance || (isCanton && !cantonToken)" @click="onSign">{{
           insufficientBalance ? "Insufficient Balance" : "Send"
         }}</ion-button>
       </ion-item>
@@ -247,6 +271,7 @@ import UnlockModal from "@/views/UnlockModal.vue";
 import router from "@/router";
 import { setUnlockModalState } from "@/utils/unlockStore";
 import AssetChanges from "./sub-views/AssetChanges.vue";
+import { CANTON_TRANSFER_DECIMALS, getCantonTransferToken, isCantonChain } from "@/utils/canton";
 import type { AlchemyAssetChange } from "@/extension/types";
 import { getAlchemyEndpointFromChainId, simulateTx } from "@/utils/alchemy";
 
@@ -280,6 +305,21 @@ const gasPriceModal = ref(false);
 const inGasPrice = ref(0);
 const inGasLimit = ref(0);
 const showRawData = ref(false);
+
+// Canton transfer display
+const isCanton = ref(false);
+const cantonToken = ref(undefined) as Ref<ReturnType<typeof getCantonTransferToken>>;
+const cantonTokenPrice = ref(0);
+let cantonAmountNum: number | null = null;
+let cantonAmount = "";
+try {
+  const raw = BigInt(params?.value ?? 0);
+  if (raw < 0n) throw new Error("negative");
+  cantonAmount = ethers.formatUnits(raw, CANTON_TRANSFER_DECIMALS);
+  cantonAmountNum = Number(cantonAmount);
+} catch {
+  cantonAmount = `invalid amount (${String(params?.value)})`;
+}
 
 // asset changes
 const isAssetChangesEnabled = ref(false);
@@ -445,6 +485,8 @@ onIonViewWillEnter(async () => {
   const data = await Promise.all([pGetSelectedNetwork, pGetSelectedAccount]);
   selectedNetwork.value = data[0];
   intialSelectedAccount.value = data[1];
+  isCanton.value = isCantonChain(selectedNetwork.value?.chainId);
+  cantonToken.value = getCantonTransferToken(selectedNetwork.value?.chainId, params?.token);
   userBalance.value = Number(ethers.formatEther((await pBalance).toString() ?? "0x0"));
   const { feed, price } = await pGasPrice;
   gasFeed = feed;
@@ -474,12 +516,12 @@ onIonViewWillEnter(async () => {
   }
   const prices = await pGetPrices;
 
-  if (params?.token === 'CBTC'){
-    dollarPrice.value =  prices['bitcoin']?.usd ?? 0;
-
-  }else{
   dollarPrice.value =
     prices[chainIdToPriceId(selectedNetwork.value?.chainId ?? 0)]?.usd ?? 0;
+  if (cantonToken.value) {
+    cantonTokenPrice.value =
+      cantonToken.value.fixedPrice ??
+      (cantonToken.value.priceId ? (prices as any)[cantonToken.value.priceId]?.usd ?? 0 : 0);
   }
 
   await newGasData();

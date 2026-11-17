@@ -45,7 +45,7 @@ import { updatePrices } from '@/utils/gecko'
 import { allTemplateNets, noFoundNetworks } from '@/utils/networks'
 import { cyrb64Hash, stringify } from '@/utils/misc'
 import { runMigrations } from '@/utils/network-migrations'
-import { sendCantonTransaction } from '@/utils/canton';
+import { getCantonTransferToken, isCantonChain, sendCantonTransaction } from '@/utils/canton';
 
 // const METAMAKS_EXTENSION_ID = 'nkbihfbeogaeaoehlefnkodbefgpgknn'
 
@@ -694,6 +694,18 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                             })
                             return
                         }
+                        if (isCantonChain(network.chainId)) {
+                            // Canton transfers cannot execute calldata and need a known instrument
+                            const hasData = [params?.data, params?.input].some((d) => d !== undefined && d !== null && d !== '' && d !== '0x')
+                            if (hasData || !getCantonTransferToken(network.chainId, params?.token)) {
+                                sendResponse({
+                                    error: true,
+                                    code: rpcError.INVALID_PARAM,
+                                    message: hasData ? 'Canton transfers do not support transaction data' : 'Unsupported or missing Canton token'
+                                })
+                                break
+                            }
+                        }
                         params.from = account.address
                         const serializeParams = strToHex(JSON.stringify(params)) ?? ''
                         let gWin: any
@@ -722,12 +734,17 @@ const mainListener = (message: RequestArguments, sender: any, sendResponse: (a: 
                             })
 
                         })
+                        const requestChainId = network.chainId
                         try {
                             const network = await getSelectedNetwork()
 
-                            const isCanton = network.chainId === 31337 || network.chainId === 30337
+                            const isCanton = isCantonChain(network.chainId)
                             let tx
                             if(isCanton){
+                                // Canton validation above was done for the network the request was made on
+                                if (network.chainId !== requestChainId) {
+                                    throw new Error('Network changed while confirming the transaction')
+                                }
                                 //submit prepare, execute canton flow
                                 tx = await sendCantonTransaction({...params})
 
