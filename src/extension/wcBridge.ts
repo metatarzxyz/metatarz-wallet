@@ -146,6 +146,33 @@ const toVerify = (verifyContext: any): WcVerify => {
 // network id already has that form.
 const wcChainOf = (networkId: string) => (networkId.startsWith('canton:') ? networkId : `canton:${networkId}`)
 
+// Canton network ids are operator-defined and dApps disagree on spelling
+// (e.g. cantex.io uses "canton:MainNet", others "canton:mainnet" or
+// "canton:da-mainnet"). Compare them by a canonical form and answer each dApp
+// with the chain id it asked for.
+const canonicalChain = (chain: string): string => {
+    let ref = String(chain).replace(/^canton:/i, '').toLowerCase().replace(/[-_\s]/g, '')
+    if (ref.startsWith('da')) ref = ref.slice(2)
+    if (ref === 'main' || ref === 'production' || ref === 'prod') ref = 'mainnet'
+    if (ref === 'test') ref = 'testnet'
+    if (ref === 'dev') ref = 'devnet'
+    return `canton:${ref}`
+}
+const sameChain = (a: string, b: string) => canonicalChain(a) === canonicalChain(b)
+
+// Rewrites networkId values in a CIP-0103 result to the session's chain spelling
+const withSessionNetworkId = (value: unknown, walletNetworkId: string, sessionChain: string): unknown => {
+    if (Array.isArray(value)) return value.map((v) => withSessionNetworkId(v, walletNetworkId, sessionChain))
+    if (!value || typeof value !== 'object') return value
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        out[k] = k === 'networkId' && typeof v === 'string' && sameChain(v, walletNetworkId)
+            ? sessionChain
+            : withSessionNetworkId(v, walletNetworkId, sessionChain)
+    }
+    return out
+}
+
 // CAIP-10: canton:<network-ref>:<party id, percent-encoded so "::" becomes %3A%3A>
 const wcAccountOf = (chain: string, partyId: string) => `${chain}:${encodeURIComponent(partyId)}`
 
@@ -214,12 +241,14 @@ const handleProposal = async (msg: any): Promise<void> => {
         notify('WalletConnect', "The Canton dApp API is not enabled on this wallet's server.")
         return rejectProposal(id, { code: WC_ERRORS.EXECUTION_ERROR, message: "CIP-0103 is not enabled on this wallet's server" })
     }
-    const chain = wcChainOf(share.networkId)
+    const walletChain = wcChainOf(share.networkId)
     const requiredCanton = cantonEntries(required)
     const requestedChains = requested.flatMap((e) => e.chains)
-    if (requestedChains.length && !requestedChains.includes(chain)) {
-        notify('WalletConnect', `${peer.name} asked for ${requestedChains.join(', ')}, but the wallet is on ${chain}.`)
-        return rejectProposal(id, { sdk: 'UNSUPPORTED_CHAINS', message: `The wallet is on ${chain}` })
+    // Use the dApp's own spelling of the wallet's network (if it named one)
+    const chain = requestedChains.length ? requestedChains.find((c) => sameChain(c, walletChain)) : walletChain
+    if (!chain) {
+        notify('WalletConnect', `${peer.name} asked for ${requestedChains.join(', ')}, but the wallet is on ${walletChain}.`)
+        return rejectProposal(id, { sdk: 'UNSUPPORTED_CHAINS', message: `The wallet is on ${walletChain}` })
     }
     const unsupportedMethods = requiredCanton.flatMap((e) => e.methods).filter((m) => !WC_CANTON_METHODS.includes(m))
     if (unsupportedMethods.length) {
@@ -306,7 +335,7 @@ const handleSessionRequest = async (msg: any): Promise<WcResult> => {
     }
     const chainId = str(msg?.chainId, 256)
     const share = await getCantonShareInfo()
-    if (share && chainId && chainId !== wcChainOf(share.networkId)) {
+    if (share && chainId && !sameChain(chainId, wcChainOf(share.networkId))) {
         return { error: { code: WC_ERRORS.EXECUTION_ERROR, message: `The wallet is on ${wcChainOf(share.networkId)}, not ${chainId}` } }
     }
     const ctx: Cip103Context = {
@@ -318,11 +347,17 @@ const handleSessionRequest = async (msg: any): Promise<WcResult> => {
     }
     const params = msg?.params === undefined || msg?.params === null ? {} : msg.params
     try {
-        const result = await handleCip103Request({ method: cipMethod, params }, ctx)
+        const raw = await handleCip103Request({ method: cipMethod, params }, ctx)
         if (method === 'canton_prepareSignExecute') {
             // { status: 'executed', commandId, payload } without the CIP-0103 { tx } wrapper
-            return { result: (result as { tx?: unknown })?.tx ?? result }
+            return { result: (raw as { tx?: unknown })?.tx ?? raw }
         }
+        if (method === 'canton_ledgerApi') {
+            // Raw Ledger API JSON, returned untouched
+            return { result: raw === undefined ? null : raw }
+        }
+        // Report the network with the spelling this session was approved with
+        const result = share ? withSessionNetworkId(raw, share.networkId, record.chains[0]) : raw
         return { result: result === undefined ? null : result }
     } catch (e) {
         const code = e instanceof Cip103Error ? e.code : CIP103_ERRORS.INTERNAL
@@ -358,10 +393,11 @@ const forwardEvent = async (event: { event: string, payload: unknown, origin?: s
     const sessions = await getWalletConnectSessions()
     const targets = Object.values(sessions).filter((r) => event.origin === undefined || r.topic === wcTopicOf(event.origin))
     if (!targets.length || !isWalletConnectSupported()) return
-    const share = event.event === 'statusChanged' ? await getCantonShareInfo() : undefined
+    const share = await getCantonShareInfo()
     for (const record of targets) {
-        await emitToSession(record, event.event, event.payload)
-        if (share && share.networkId !== record.networkId) {
+        const payload = share ? withSessionNetworkId(event.payload, share.networkId, record.chains[0]) : event.payload
+        await emitToSession(record, event.event, payload)
+        if (event.event === 'statusChanged' && share && !sameChain(share.networkId, record.networkId)) {
             await emitToSession(record, 'chainChanged', { chainId: wcChainOf(share.networkId) })
             await setWalletConnectSession({ ...record, networkId: share.networkId })
         }
