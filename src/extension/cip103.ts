@@ -156,10 +156,11 @@ const emit = (e: Cip103Event) => {
 // Network
 
 // Used when the server does not report its network id (GET /api/v2/cip103/network
-// takes precedence). dApps such as cantex.io compare these ids case-sensitively.
+// takes precedence). Metatarz uses lowercase ids everywhere; WalletConnect sessions
+// accept other spellings of the same network (see wcBridge.ts).
 const FALLBACK_NETWORK_IDS: Record<number, string> = {
-    31337: 'canton:MainNet',
-    30337: 'canton:TestNet',
+    31337: 'canton:mainnet',
+    30337: 'canton:testnet',
 }
 
 const middlewareUrl = (network: Network) => (network?.rpc ?? '').replace(/\/+$/, '')
