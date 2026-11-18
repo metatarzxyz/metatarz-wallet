@@ -29,10 +29,6 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/CantonSign.vue'),
   },
   {
-    path: '/canton-unlock/:rid/:param',
-    component: () => import('@/views/CantonUnlock.vue'),
-  },
-  {
     path: '/wc-proposal/:rid/:param/:website',
     component: () => import('@/views/WcSessionProposal.vue'),
   },

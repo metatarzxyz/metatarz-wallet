@@ -77,7 +77,9 @@
 </template>
 
 <script lang="ts" setup>
+import { onMounted, onUnmounted } from "vue";
 import {
+  modalController,
   IonPage,
   IonContent,
   IonRouterOutlet,
@@ -100,6 +102,60 @@ import {
   contractOutline,
   linkOutline
 } from "ionicons/icons";
+
+import UnlockModal from "@/views/UnlockModal.vue";
+import { setUnlockModalState } from "@/utils/unlockStore";
+import { CIP103_UNLOCK_WAITING_KEY, isWalletLocked } from "@/utils/platform";
+
+// Ask for the password when the wallet window opens locked, and when a connected
+// Canton site's read is blocked while this window is open. Never more than one
+// prompt at a time; closing it keeps the wallet locked.
+let unlockPromptOpen = false;
+
+const latestWaitingSite = (waiting: Record<string, { label: string; at: number }> | undefined) =>
+  Object.values(waiting ?? {}).sort((a, b) => b.at - a.at)[0]?.label;
+
+const promptUnlock = async (requester?: string) => {
+  if (unlockPromptOpen || !(await isWalletLocked())) return;
+  if (await modalController.getTop()) return; // another dialog (e.g. a flow's own unlock) is open
+  unlockPromptOpen = true;
+  try {
+    const modal = await modalController.create({
+      component: UnlockModal,
+      animated: true,
+      focusTrap: false,
+      backdropDismiss: false,
+      componentProps: requester ? { unlockType: "canton", requester } : { unlockType: "open" },
+    });
+    await modal.present();
+    setUnlockModalState(true);
+    await modal.onWillDismiss();
+    await setUnlockModalState(false);
+  } finally {
+    unlockPromptOpen = false;
+  }
+};
+
+const onSessionChange = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
+  if (area !== "session" || !(CIP103_UNLOCK_WAITING_KEY in changes)) return;
+  const before = changes[CIP103_UNLOCK_WAITING_KEY].oldValue ?? {};
+  const after = changes[CIP103_UNLOCK_WAITING_KEY].newValue ?? {};
+  // Only react to a newly recorded (or re-recorded) blocked site
+  const fresh = Object.entries(after as Record<string, { label: string; at: number }>)
+    .filter(([origin, v]) => (before as Record<string, { at: number }>)[origin]?.at !== v.at)
+    .map(([, v]) => v.label);
+  if (fresh.length) promptUnlock(fresh[0]);
+};
+
+onMounted(async () => {
+  chrome.storage.onChanged.addListener(onSessionChange);
+  const waiting = (await chrome.storage.session.get(CIP103_UNLOCK_WAITING_KEY))?.[CIP103_UNLOCK_WAITING_KEY];
+  promptUnlock(latestWaitingSite(waiting));
+});
+
+onUnmounted(() => {
+  chrome.storage.onChanged.removeListener(onSessionChange);
+});
 
 const beforeTabChange = () => {
   // do something before tab change

@@ -15,8 +15,15 @@
           <ion-item>To continue signing the message, unlock wallet.</ion-item>
           <ion-item>Closing will reject sigining the message.</ion-item>
         </ion-list>
+        <ion-list v-else-if="unlockType === 'open'">
+          <ion-item>Your wallet is locked. Enter your password to unlock it.</ion-item>
+          <ion-item>Closing keeps the wallet locked; transactions and connected sites will ask again.</ion-item>
+        </ion-list>
         <ion-list v-else-if="unlockType === 'canton'">
-          <ion-item>Unlock the wallet so the site can read your Canton data.</ion-item>
+          <ion-item class="ion-text-wrap">
+            {{ requester || "A connected site" }} wants to read your Canton data (balances
+            and contracts). Unlock the wallet to allow it.
+          </ion-item>
           <ion-item>Closing keeps the wallet locked.</ion-item>
         </ion-list>
         <ion-list v-else-if="unlockType === 'viewPk'">
@@ -112,6 +119,7 @@ import { unlockModalStateSubscribe } from "@/utils/unlockStore";
 
 defineProps<{
   unlockType: string;
+  requester?: string;
 }>();
 
 const mpPass = ref("");

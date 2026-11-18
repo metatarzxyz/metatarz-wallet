@@ -26,7 +26,7 @@ import {
     getUnlockedPk,
     isCantonSiteConnected,
     removeCantonConnectedSite,
-    hexTostr,
+    CIP103_UNLOCK_WAITING_KEY,
     setCachedPublicKeys,
     strToHex,
 } from '@/utils/platform'
@@ -738,7 +738,7 @@ const signMessage = async (ctx: Cip103Context, params: unknown) => {
 
 const LEDGER_AUTH_KEY = 'cip103LedgerAuth'
 const LEDGER_AUTH_REUSE_MS = 4 * 6e4
-const LOCKED_MESSAGE = 'Wallet is locked. The user has been asked to unlock Metatarz Wallet; retry after unlocking.'
+const LOCKED_MESSAGE = 'Wallet is locked. Unlock Metatarz Wallet and retry.'
 
 type CachedLedgerAuth = Cip103Auth & { at: number }
 
@@ -793,15 +793,15 @@ const ledgerAuthFor = async (account: Account, forceNew = false): Promise<Cip103
 // ---------------------------------------------------------------------------
 // Locked wallet notice
 //
-// dApps poll ledgerApi, so a locked wallet must not open popups on its own.
-// Instead the user gets a badge on the extension icon and one system
-// notification per requesting site (at most every 5 minutes); clicking it opens
-// a small unlock window. After unlocking, the dApp's next call succeeds.
+// dApps poll ledgerApi, so a locked wallet never opens a window on its own.
+// Instead the requesting site is recorded in the session store
+// (cip103UnlockWaiting: origin -> { label, at }); an open wallet window watches
+// it and asks the user to unlock (at most every 5 minutes per site), and the
+// wallet always asks to unlock when it is opened while locked. After unlocking,
+// the dApp's next call succeeds.
 
-const UNLOCK_NOTICE_KEY = 'cip103UnlockNoticeAt'
+const UNLOCK_WAITING_KEY = CIP103_UNLOCK_WAITING_KEY
 const UNLOCK_NOTICE_INTERVAL_MS = 5 * 6e4
-const UNLOCK_NOTIFICATION_PREFIX = 'cip103-unlock|'
-let unlockWindowId: number | undefined
 
 const requesterLabel = (ctx: Cip103Context): string => {
     if (ctx.transport === 'walletconnect') {
@@ -814,55 +814,14 @@ const requesterLabel = (ctx: Cip103Context): string => {
     }
 }
 
-const setLockedBadge = async (on: boolean) => {
-    try {
-        if (on) {
-            await chrome.action.setBadgeBackgroundColor({ color: '#d97706' })
-            await chrome.action.setBadgeText({ text: '!' })
-            await chrome.action.setTitle({ title: 'Metatarz Wallet: a site is waiting for you to unlock the wallet' })
-        } else {
-            await chrome.action.setBadgeText({ text: '' })
-            await chrome.action.setTitle({ title: chrome.i18n.getMessage('appName') || 'Metatarz Wallet' })
-        }
-    } catch {
-        // ignore: badge is best effort
-    }
-}
-
 const noticeLockedRead = async (ctx: Cip103Context) => {
-    await setLockedBadge(true)
     const now = Date.now()
-    const seen: Record<string, number> = (await chrome.storage.session.get(UNLOCK_NOTICE_KEY))?.[UNLOCK_NOTICE_KEY] ?? {}
-    if (seen[ctx.origin] && now - seen[ctx.origin] < UNLOCK_NOTICE_INTERVAL_MS) return
-    seen[ctx.origin] = now
-    await chrome.storage.session.set({ [UNLOCK_NOTICE_KEY]: seen })
-    const label = requesterLabel(ctx)
-    chrome.notifications.create(UNLOCK_NOTIFICATION_PREFIX + strToHex(label) + '|' + now, {
-        type: 'basic',
-        iconUrl: chrome.runtime.getURL('assets/extension-icon/wallet_128.png'),
-        title: 'Unlock Metatarz Wallet',
-        message: `${label} wants to read your Canton data (balances and contracts). Click to unlock the wallet.`,
-        priority: 1,
-    } as chrome.notifications.NotificationCreateOptions)
-}
-
-/** Opens (or focuses) the small unlock window for a site waiting on a locked wallet. */
-export const openUnlockRequest = async (label: string) => {
-    if (unlockWindowId !== undefined) {
-        try {
-            await chrome.windows.update(unlockWindowId, { focused: true })
-            return
-        } catch {
-            unlockWindowId = undefined
-        }
-    }
-    const win = await chrome.windows.create({
-        type: 'popup',
-        width: 400,
-        height: 460,
-        url: chrome.runtime.getURL(`index.html?route=canton-unlock&param=${strToHex(label)}&rid=${randomRid()}&website=`),
-    })
-    unlockWindowId = win?.id
+    const waiting: Record<string, { label: string, at: number }> =
+        (await chrome.storage.session.get(UNLOCK_WAITING_KEY))?.[UNLOCK_WAITING_KEY] ?? {}
+    const prev = waiting[ctx.origin]
+    if (prev && now - prev.at < UNLOCK_NOTICE_INTERVAL_MS) return
+    waiting[ctx.origin] = { label: requesterLabel(ctx), at: now }
+    await chrome.storage.session.set({ [UNLOCK_WAITING_KEY]: waiting })
 }
 
 const isLockedError = (e: unknown) => e instanceof Cip103Error && e.message === LOCKED_MESSAGE
@@ -1061,23 +1020,16 @@ const scheduleSnapshot = () => {
 const WATCHED_LOCAL_KEYS = ['selectedAccount', 'selectedNetwork', 'accounts', 'networks', 'cantonPublicKeys']
 
 export const watchCip103State = () => {
-    chrome.notifications.onClicked.addListener((id) => {
-        if (!id.startsWith(UNLOCK_NOTIFICATION_PREFIX)) return
-        chrome.notifications.clear(id)
-        const label = hexTostr(id.slice(UNLOCK_NOTIFICATION_PREFIX.length).split('|')[0])
-        openUnlockRequest(label).catch((e) => console.warn('CIP-0103: unlock window failed', e))
-    })
-    chrome.windows.onRemoved.addListener((winId) => {
-        if (winId === unlockWindowId) unlockWindowId = undefined
-    })
+    // Clean up after the earlier badge/notification version of the locked notice
+    chrome.action?.setBadgeText({ text: '' }).catch(() => {})
+    chrome.storage.session.remove('cip103UnlockNoticeAt').catch(() => {})
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'session' && 'unlockedPks' in changes) {
             refreshCachedPublicKeys().catch((e) => console.warn('CIP-0103: public key cache failed', e))
             const unlocked = Object.keys(changes.unlockedPks.newValue ?? {}).length > 0
             if (unlocked) {
                 // The wallet was unlocked: waiting sites can read again on their next call
-                setLockedBadge(false)
-                chrome.storage.session.remove(UNLOCK_NOTICE_KEY).catch(() => {})
+                chrome.storage.session.remove(UNLOCK_WAITING_KEY).catch(() => {})
             }
             return
         }

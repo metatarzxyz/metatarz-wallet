@@ -122,12 +122,6 @@ onMounted(() => {
       });
       break;
     }
-    case "canton-unlock": {
-      router.push({
-        path: `/canton-unlock/${rid}/${param}`,
-      });
-      break;
-    }
     case "wc-proposal": {
       router.push({
         path: `/wc-proposal/${rid}/${param}/${website}`,

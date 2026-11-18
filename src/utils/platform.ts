@@ -77,6 +77,20 @@ export const removeUnlockedPk = async (address: string): Promise<void> => {
     await chrome.storage.session.set({ [SESSION_PKS_KEY]: pks })
 }
 
+/** Session-store key listing sites whose Canton reads were blocked by a locked wallet. */
+export const CIP103_UNLOCK_WAITING_KEY = 'cip103UnlockWaiting'
+
+/**
+ * True when the wallet has encrypted accounts but none of their keys is in the
+ * session store (never unlocked since browser start, or auto-locked).
+ */
+export const isWalletLocked = async (): Promise<boolean> => {
+    const encrypted = (await getStoredAccounts()).filter(a => a?.encPk)
+    if (!encrypted.length) return false
+    const pks = await getUnlockedPks()
+    return !encrypted.some(a => pks[a.address?.toLowerCase()])
+}
+
 /** Decrypted key of one account from the session store ('' while locked). */
 export const getUnlockedPk = async (address: string): Promise<string> => {
     if (!address) return ''
