@@ -203,24 +203,6 @@
         </ion-accordion>
         <ion-accordion>
           <ion-item slot="header" color="light">
-            <ion-label>WalletConnect (Canton)</ion-label>
-          </ion-item>
-          <div class="ion-padding" slot="content">
-            <p class="helper-label" v-if="isRuntimeFirefox">
-              WalletConnect is not available in Firefox (it needs offscreen documents,
-              which Firefox does not support).
-            </p>
-            <p class="helper-label" v-else>
-              Connect Canton dApps by pasting a WalletConnect link, and manage the active
-              WalletConnect sessions.
-            </p>
-            <ion-button expand="block" @click="router.push('/tabs/walletconnect')"
-              >Open WalletConnect</ion-button
-            >
-          </div>
-        </ion-accordion>
-        <ion-accordion>
-          <ion-item slot="header" color="light">
             <ion-label>Theme & Misc</ion-label>
           </ion-item>
           <div class="ion-padding" slot="content">
@@ -399,7 +381,6 @@
 
 <script lang="ts" setup>
 import { ref, reactive, Ref } from "vue";
-import { useRouter } from "vue-router";
 import {
   storageWipe,
   getSettings,
@@ -458,7 +439,6 @@ const alertHeader = ref("Error");
 const lockOutPeriod = defineModel({ default: 2 });
 const importFile = (ref(null) as unknown) as Ref<HTMLInputElement>;
 const isRuntimeFirefox = ref(false);
-const router = useRouter();
 
 type ModalPromisePassword = null | {
   resolve: (p?: unknown) => void;

@@ -55,6 +55,11 @@
               <ion-label>Manage Tokens</ion-label>
             </ion-tab-button>
 
+            <ion-tab-button tab="walletconnect" href="/tabs/walletconnect">
+              <ion-icon :icon="linkOutline"></ion-icon>
+              <ion-label>WalletConnect</ion-label>
+            </ion-tab-button>
+
             <!-- <ion-tab-button tab="deposit-token" href="/tabs/deposit-token">
               <ion-icon :icon="glassesOutline"></ion-icon>
               <ion-label>Deposit Tokens</ion-label>
@@ -92,7 +97,8 @@ import {
   sendOutline,
   glassesOutline,
   pushOutline,
-  contractOutline
+  contractOutline,
+  linkOutline
 } from "ionicons/icons";
 
 const beforeTabChange = () => {

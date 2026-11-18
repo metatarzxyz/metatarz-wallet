@@ -2,9 +2,6 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-buttons slot="start">
-          <ion-button @click="router.push('/tabs/settings')">Back</ion-button>
-        </ion-buttons>
         <ion-title>WalletConnect (Canton)</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -82,13 +79,11 @@
 
 <script lang="ts" setup>
 import { ref } from "vue";
-import { useRouter } from "vue-router";
 import {
   IonPage,
   IonHeader,
   IonToolbar,
   IonTitle,
-  IonButtons,
   IonButton,
   IonContent,
   IonList,
@@ -105,7 +100,6 @@ import {
 } from "@ionic/vue";
 import { isWcUri, type WcSessionRecord, type WcVerify } from "@/extension/wcConstants";
 
-const router = useRouter();
 const supported = ref(true);
 const unsupportedReason = ref("");
 const uri = ref("");
