@@ -120,17 +120,23 @@ const promptUnlock = async (requester?: string) => {
   if (await modalController.getTop()) return; // another dialog (e.g. a flow's own unlock) is open
   unlockPromptOpen = true;
   try {
-    const modal = await modalController.create({
-      component: UnlockModal,
-      animated: true,
-      focusTrap: false,
-      backdropDismiss: false,
-      componentProps: requester ? { unlockType: "canton", requester } : { unlockType: "open" },
-    });
-    await modal.present();
-    setUnlockModalState(true);
-    await modal.onWillDismiss();
-    await setUnlockModalState(false);
+    // The lock screen has no Close button; if it is dismissed any other way
+    // (e.g. the Escape key) while the wallet is still locked, show it again.
+    do {
+      const modal = await modalController.create({
+        component: UnlockModal,
+        animated: true,
+        focusTrap: false,
+        backdropDismiss: false,
+        keyboardClose: false,
+        canDismiss: async (_data?: unknown, role?: string) => role === "confirm" || !(await isWalletLocked()),
+        componentProps: requester ? { unlockType: "canton", requester } : { unlockType: "open" },
+      });
+      await modal.present();
+      setUnlockModalState(true);
+      await modal.onWillDismiss();
+      await setUnlockModalState(false);
+    } while (await isWalletLocked());
   } finally {
     unlockPromptOpen = false;
   }

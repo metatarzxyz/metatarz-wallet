@@ -2,8 +2,8 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-title>Unlock to Proceed</ion-title>
-        <ion-buttons slot="end">
+        <ion-title>{{ isLockScreen ? "Wallet Locked" : "Unlock to Proceed" }}</ion-title>
+        <ion-buttons slot="end" v-if="!isLockScreen">
           <ion-button @click="close" color="primary">Close</ion-button>
         </ion-buttons>
       </ion-toolbar>
@@ -17,14 +17,12 @@
         </ion-list>
         <ion-list v-else-if="unlockType === 'open'">
           <ion-item>Your wallet is locked. Enter your password to unlock it.</ion-item>
-          <ion-item>Closing keeps the wallet locked; transactions and connected sites will ask again.</ion-item>
         </ion-list>
         <ion-list v-else-if="unlockType === 'canton'">
           <ion-item class="ion-text-wrap">
             {{ requester || "A connected site" }} wants to read your Canton data (balances
             and contracts). Unlock the wallet to allow it.
           </ion-item>
-          <ion-item>Closing keeps the wallet locked.</ion-item>
         </ion-list>
         <ion-list v-else-if="unlockType === 'viewPk'">
           <ion-item>To view the PK, unlock wallet.</ion-item>
@@ -96,7 +94,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, Ref } from "vue";
+import { computed, ref, Ref } from "vue";
 import {
   IonContent,
   IonHeader,
@@ -117,10 +115,15 @@ import { getStoredAccounts, setUnlockedPks, markWalletActivity } from "@/utils/p
 import { decrypt, getCryptoParams } from "@/utils/webCrypto";
 import { unlockModalStateSubscribe } from "@/utils/unlockStore";
 
-defineProps<{
+const props = defineProps<{
   unlockType: string;
   requester?: string;
 }>();
+
+// The wallet's lock screen ('open' on opening a locked wallet, 'canton' when a
+// connected site is waiting) cannot be closed: only unlocking dismisses it.
+// In request flows (transaction, message, ...) Close still rejects the request.
+const isLockScreen = computed(() => props.unlockType === "open" || props.unlockType === "canton");
 
 const mpPass = ref("");
 const loading = ref(false);
