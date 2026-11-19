@@ -1,5 +1,6 @@
 import { getSelectedAccount, getSelectedNetwork, numToHexStr } from '@/utils/platform';
 import { TransactionResponse, ethers } from "ethers"
+import type { Network } from '@/extension/types'
 import { getCurrentProvider, signHashDER, signMsg, signMsgWithPk } from './wallet';
 
 
@@ -105,12 +106,16 @@ export const cantonErrorMessage = (res?: MiddlewareError): string => {
 }
 
 //send canton non-custodial transaction flow.
-export const sendCantonTransaction = async (params: any, type = "transfer", party?: string, pk?: string): Promise<TransactionResponse | undefined> => {
+// `cantonNetwork` overrides the selected network (e.g. an approval popup working
+// on the active Canton network while another network is selected).
+export const sendCantonTransaction = async (params: any, type = "transfer", party?: string, pk?: string, cantonNetwork?: Network): Promise<TransactionResponse | undefined> => {
 
     //console.log('partyid', party)
 
     const account = await getSelectedAccount()
-    const { provider, network } = await getCurrentProvider()
+    const { provider, network } = cantonNetwork
+        ? { provider: undefined, network: cantonNetwork }
+        : await getCurrentProvider()
     const wallet = new ethers.Wallet(pk ? pk : account.pk, provider)
     const url = network.rpc
 
@@ -180,15 +185,15 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
 
 // call register + preapprove (prepare + execute) endpoints
 
-export const sendPreapproval = async (type: string, party: string, pk: string,) => {
-    await sendCantonTransaction({}, type, party, pk)
+export const sendPreapproval = async (type: string, party: string, pk: string, network?: Network) => {
+    await sendCantonTransaction({}, type, party, pk, network)
 
 }
 
 // grant the wallet operator a merge delegation (prepare + execute), so it can merge
 // fragmented holdings for the user. One per user, covers all assets; 409 = already exists.
-export const sendMergeDelegation = async (party: string, pk: string) => {
-    await sendCantonTransaction({}, "merge-delegation", party, pk)
+export const sendMergeDelegation = async (party: string, pk: string, network?: Network) => {
+    await sendCantonTransaction({}, "merge-delegation", party, pk, network)
 }
 export const registerWallet = async (pk: string) => {
     const wallet = new ethers.Wallet(pk)
@@ -299,7 +304,7 @@ export const registerWallet = async (pk: string) => {
 }
 
 // Parses a middleware response; errors come back as { error, code }.
-async function readMiddlewareResponse(response: Response) {
+export async function readMiddlewareResponse(response: Response) {
     const body = await response.json().catch(() => undefined)
 
     if (!response.ok) {

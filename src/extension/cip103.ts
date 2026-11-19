@@ -44,6 +44,22 @@ import {
     type Cip103Auth,
     type MiddlewareError,
 } from '@/utils/canton'
+import {
+    executeSwap,
+    fetchSwapQuote,
+    swapSymbolLabel,
+    SwapError,
+    validateSwapParams,
+    type SwapErrorKind,
+    type SwapQuote,
+} from '@/utils/swap'
+import {
+    CANTON_TOKEN_SYMBOLS,
+    isTokenActivatable,
+    isTokenActivated,
+    SWAP_POOL_TOKEN_KEYS,
+    tokenKeyOfPoolSymbol,
+} from '@/utils/cantonActivation'
 
 export const CIP103_PROVIDER_ID = 'metatarz-wallet'
 
@@ -401,6 +417,23 @@ const primaryOf = (s: State): CantonAccount => {
 }
 
 // ---------------------------------------------------------------------------
+// Token activation (receiving a Canton asset needs a transfer preapproval; see
+// utils/cantonActivation.ts). Read from the active network object and, like
+// isActivatedOn, from the stored networks.
+
+const tokenActivatedOn = (network: Network, networks: Record<number, Network>, address: string, poolSymbol: string) => {
+    const key = tokenKeyOfPoolSymbol(poolSymbol)
+    // Unknown instrument: nothing the wallet could activate, never block on it
+    if (!key) return true
+    return isTokenActivated(network, address, key) || isTokenActivated(networks[network.chainId], address, key)
+}
+
+/** { [pool symbol]: activated } for the swap-supported symbols. */
+const tokenActivationOf = (network: Network, networks: Record<number, Network>, address: string): Record<string, boolean> =>
+    Object.fromEntries(Object.keys(SWAP_POOL_TOKEN_KEYS).map((symbol) =>
+        [symbol, tokenActivatedOn(network, networks, address, symbol)]))
+
+// ---------------------------------------------------------------------------
 // Approval popups (same mechanism as the EVM popups: resolved by wallet_approve
 // from the popup window, rejected when the window closes or times out)
 
@@ -416,7 +449,11 @@ export const openApproval = (route: string, ctx: Cip103Context, param: unknown, 
             type: 'popup'
         }).then((win) => {
             const id = String(win?.id)
-            userReject[id] = () => reject(new Cip103Error(CIP103_ERRORS.USER_REJECTED, 'User rejected the request'))
+            // A popup whose unlock prompt was closed marks its data with unlockCancelled
+            // (wallet_send_data): the request fails as locked rather than rejected
+            userReject[id] = () => reject(rIdData[id]?.unlockCancelled === true
+                ? new Cip103Error(CIP103_ERRORS.UNAUTHORIZED, 'The wallet is locked')
+                : new Cip103Error(CIP103_ERRORS.USER_REJECTED, 'User rejected the request'))
             userApprove[id] = () => resolve()
             rIdWin[id] = rid
             // Request data for the popup, read back with wallet_get_data (lossless, no URL size limit)
@@ -681,6 +718,114 @@ const prepareExecute = async (ctx: Cip103Context, params: unknown, wait: boolean
     // prepareExecute returns once approved; progress is reported with txChanged
     run.catch(() => {})
     return null
+}
+
+// ---------------------------------------------------------------------------
+// metatarz_swap
+//
+// Wallet-executed swap through the wallet's middleware (see utils/swap.ts): the
+// site only names the assets, the input amount and its minimum output; the wallet
+// shows its own quote, asks for approval, then prepares, checks, signs and
+// executes the swap itself.
+
+const SWAP_ERROR_CODES: Record<SwapErrorKind, number> = {
+    invalid: CIP103_ERRORS.INVALID_PARAMS,
+    unacceptable: CIP103_ERRORS.TRANSACTION_REJECTED,
+    unavailable: CIP103_ERRORS.NOT_SUPPORTED,
+    unreachable: CIP103_ERRORS.RESOURCE_UNAVAILABLE,
+    internal: CIP103_ERRORS.INTERNAL,
+}
+
+const toSwapCip103Error = (e: unknown): Cip103Error => {
+    if (e instanceof Cip103Error) return e
+    if (e instanceof SwapError) return new Cip103Error(SWAP_ERROR_CODES[e.kind], e.message)
+    console.warn('metatarz_swap failed', e)
+    return new Cip103Error(CIP103_ERRORS.INTERNAL, 'Internal wallet error')
+}
+
+const swap = async (ctx: Cip103Context, rawParams: unknown) => {
+    const s = await requireConnected(ctx)
+    const signer = primaryOf(s)
+    const params = (() => {
+        try {
+            return validateSwapParams(rawParams)
+        } catch (e) {
+            throw toSwapCip103Error(e)
+        }
+    })()
+    const url = middlewareUrl(s.network)
+
+    // The wallet's own indicative quote, for display. Not blocking, except when
+    // the server already says the swap cannot be done (bad pair/amount, swaps off).
+    let quote: SwapQuote | undefined
+    let quoteError = ''
+    try {
+        quote = await fetchSwapQuote(url, params)
+    } catch (e) {
+        if (e instanceof SwapError && (e.kind === 'invalid' || e.kind === 'unavailable')) {
+            throw toSwapCip103Error(e)
+        }
+        quoteError = e instanceof SwapError ? e.message : 'Quote unavailable'
+    }
+
+    // Receiving `to` needs its transfer preapproval: if missing, the popup activates
+    // it (it holds the unlocked key) before approving. CC is always activated here
+    // (requireConnected only exposes accounts with CC activated).
+    const toKey = tokenKeyOfPoolSymbol(params.to)
+    const needsActivation = !!toKey &&
+        !tokenActivatedOn(s.network, await getNetworks(), signer.account.address, params.to)
+    const activationSymbol = toKey ? CANTON_TOKEN_SYMBOLS[toKey] : swapSymbolLabel(params.to)
+    if (needsActivation && toKey && !isTokenActivatable(s.network.chainId, toKey)) {
+        throw new Cip103Error(CIP103_ERRORS.INVALID_PARAMS,
+            `${activationSymbol} cannot be activated in this wallet on this network, so it cannot be received`)
+    }
+
+    await openApproval('canton-swap', ctx, { kind: 'swap' }, {
+        kind: 'swap',
+        ...requesterInfo(ctx),
+        chainId: s.network.chainId,
+        needsActivation,
+        activationSymbol,
+        networkId: s.info.networkId,
+        party: signer.partyId,
+        accountName: signer.account.name ?? '',
+        address: signer.account.address,
+        from: params.from,
+        to: params.to,
+        amount: params.amount,
+        minAmountOut: params.minAmountOut,
+        ...(quote ? { quote: { amountOut: quote.amount_out, rate: quote.rate, spreadBps: quote.spread_bps } } : { quoteError }),
+    }, { width: 480, height: 720 })
+
+    // The popup approves only after the activation succeeded; check it was stored
+    if (needsActivation && !tokenActivatedOn(s.network, await getNetworks(), signer.account.address, params.to)) {
+        throw new Cip103Error(CIP103_ERRORS.TRANSACTION_REJECTED, `${activationSymbol} is not activated in the wallet`)
+    }
+
+    try {
+        const wallet = await unlockedKeyOf(signer.account)
+        const result = await executeSwap({
+            url,
+            account: { address: signer.account.address, pk: wallet.privateKey },
+            partyId: signer.partyId,
+            ...params,
+        })
+        if (result.updateId) {
+            addToHistory({
+                date: Date.now(),
+                txHash: result.updateId,
+                chainId: s.network.chainId,
+                label: `Swap ${swapSymbolLabel(result.from)} → ${swapSymbolLabel(result.to)}`,
+                ...(s.network.explorer ? { txUrl: `${s.network.explorer.replace(/\/+$/, '')}/updates/${result.updateId}` } : {}),
+                webiste: displayOrigin(ctx),
+            }).catch(() => {})
+        }
+        return result
+    } catch (e) {
+        throw toSwapCip103Error(e)
+    } finally {
+        await lockAfterUseIfConfigured()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -958,6 +1103,15 @@ export const handleCip103Request = async (req: Cip103Request, ctx: Cip103Context
         case 'prepareExecuteAndWait': {
             return await prepareExecute(ctx, req.params, true)
         }
+        case 'metatarz_swap': {
+            return await swap(ctx, req.params)
+        }
+        case 'metatarz_getTokenActivation': {
+            // Read-only, no popup: which swap assets the primary account can receive
+            const s = await requireConnected(ctx)
+            const signer = primaryOf(s)
+            return { activated: tokenActivationOf(s.network, await getNetworks(), signer.account.address) }
+        }
         case 'ledgerApi': {
             // Auto-approved (no popup) for connected origins; see ledgerApi above
             return await ledgerApi(ctx, req.params)
@@ -995,19 +1149,32 @@ export const getCantonShareInfo = async (): Promise<CantonShareInfo | undefined>
 // depends on) changes, and statusChanged to origins whose approval was revoked.
 
 let lastSnapshot: string | undefined
+let lastActivationSnapshot: string | undefined
 let snapshotTimer: ReturnType<typeof setTimeout> | undefined
 
 const emitIfAccountsChanged = async () => {
     const network = await getActiveCantonNetwork()
-    const [info, accounts] = network
-        ? await Promise.all([getNetworkInfo(network), getCantonAccounts(network)])
-        : [undefined, [] as CantonAccount[]]
+    const [info, accounts, networks] = network
+        ? await Promise.all([getNetworkInfo(network), getCantonAccounts(network), getNetworks()])
+        : [undefined, [] as CantonAccount[], {} as Record<number, Network>]
     const wallets = info ? toWallets(accounts, info.networkId) : []
     const snapshot = JSON.stringify({ chainId: network?.chainId ?? 0, networkId: info?.networkId ?? '', wallets, n: accounts.length })
-    if (snapshot === lastSnapshot) return
+    // Token activation of the primary account (metatarz_getTokenActivation)
+    const primary = accounts.find((a) => a.primary)
+    const activationSnapshot = JSON.stringify(network && primary
+        ? { chainId: network.chainId, address: primary.account.address, activated: tokenActivationOf(network, networks, primary.account.address) }
+        : null)
+    const accountsChanged = snapshot !== lastSnapshot
+    const activationChanged = activationSnapshot !== lastActivationSnapshot
     lastSnapshot = snapshot
+    lastActivationSnapshot = activationSnapshot
+    if (!accountsChanged && !activationChanged) return
     // Payloads as seen by a connected origin; delivery is limited to connected origins
-    emit({ event: 'accountsChanged', payload: wallets, requireConnected: true })
+    if (accountsChanged) {
+        emit({ event: 'accountsChanged', payload: wallets, requireConnected: true })
+    }
+    // A token activation alone only emits statusChanged, so sites can refetch
+    // metatarz_getTokenActivation
     emit({ event: 'statusChanged', payload: statusOf({ network, info, accounts, approved: true }), requireConnected: true })
 }
 

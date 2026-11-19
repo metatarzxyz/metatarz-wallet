@@ -17,6 +17,7 @@
             :key="item.txHash"
           >
             <ion-list>
+              <ion-item v-if="item.label"><b>{{ item.label }}</b></ion-item>
               <ion-item
                 ><b style="margin-right: 0.5rem">Date:</b>
                 {{ new Date(item.date).toDateString() }}</ion-item

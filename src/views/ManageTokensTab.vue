@@ -114,14 +114,19 @@ import {
   getUrl,
   replaceAccounts,
   saveAccount,
-  saveNetwork,
   saveSelectedAccount,
-  saveSelectedNetwork,
   storageGet,
   unBlockLockout,
 } from "@/utils/platform";
 import type { Account, Network } from "@/extension/types";
-import { registerWallet, sendMergeDelegation, sendPreapproval } from "@/utils/canton";
+import { registerWallet } from "@/utils/canton";
+import {
+  activateToken as activateCantonToken,
+  isTokenActivatable,
+  isTokenActivated,
+  tokenKeyOfSymbol,
+  type CantonTokenKey,
+} from "@/utils/cantonActivation";
 import UnlockModal from "@/views/UnlockModal.vue";
 import { setUnlockModalState } from "@/utils/unlockStore";
 import { approve } from "@/extension/userRequest";
@@ -175,8 +180,10 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
     return [];
   }
 
-  const cantonNetworkTokens =
-    cantonNetwork?.tokens?.[selectedAccount.value.address]?.canton;
+  const address = selectedAccount.value.address;
+  const chainId = selectedNetwork.value.chainId;
+  const activated = (key: CantonTokenKey) =>
+    isTokenActivated(cantonNetwork, address, key);
 
   return [
     {
@@ -184,7 +191,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       symbol: "CC",
       name: "Amulet",
       logoUrl: getUrl("assets/chain-icons/canton.webp"),
-      activated: cantonNetworkTokens?.cc?.activated || false,
+      activated: activated("cc"),
       enabled: true,
     },
     {
@@ -192,7 +199,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       symbol: "CBTC",
       name: "Canton wrapped Bitcoin",
       logoUrl: getUrl("assets/chain-icons/canton-cbtc.webp"),
-      activated: cantonNetworkTokens?.cbtc?.activated || false,
+      activated: activated("cbtc"),
       enabled: true,
     },
     {
@@ -200,16 +207,16 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       symbol: "cETH",
       name: "Canton Ethereum",
       logoUrl: getUrl("assets/chain-icons/canton-ceth.webp"),
-      activated: cantonNetworkTokens?.ceth?.activated || false,
+      activated: activated("ceth"),
       //disabled on testnet
-      enabled: selectedNetwork.value.chainId === 30337 ? false : true,
+      enabled: isTokenActivatable(chainId, "ceth"),
     },
     {
       address: "0xDE80000000000000000000000000000000000001",
       symbol: "BETH",
       name: "BETH",
       logoUrl: getUrl("assets/chain-icons/canton-beth.webp"),
-      activated: cantonNetworkTokens?.beth?.activated || false,
+      activated: activated("beth"),
       enabled: true,
     },
     {
@@ -217,7 +224,7 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       symbol: "USDCx",
       name: "Canton USDC",
       logoUrl: getUrl("assets/chain-icons/canton-usdcx.webp"),
-      activated: cantonNetworkTokens?.usdcx?.activated || false,
+      activated: activated("usdcx"),
       enabled: true,
     },
     {
@@ -225,8 +232,8 @@ const fetchCantonTokens = async (): Promise<CantonToken[]> => {
       symbol: "HANDL",
       name: "HANDL",
       logoUrl: getUrl("assets/chain-icons/canton-handl.webp"),
-      activated: cantonNetworkTokens?.handl?.activated || false,
-      enabled: false,
+      activated: activated("handl"),
+      enabled: isTokenActivatable(chainId, "handl"),
     },
   ];
 };
@@ -265,7 +272,12 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
 
     loading.value = true
 
-    if (symbol === "CC") {
+    const key = tokenKeyOfSymbol(symbol);
+    if (!key) {
+      return;
+    }
+
+    if (key === "cc") {
       //try to register wallet
       const cantonData = await registerWallet(selectedAccount.value.pk);
 
@@ -295,192 +307,24 @@ const activateTokenRequest = async (symbol: string): Promise<void> => {
       }
 
       await saveSelectedAccount(updatedAccount);
-
-      //save network
-      const currentCanton =
-        selectedNetwork.value.tokens?.[selectedAccount.value.address]?.canton ??
-        {};
-
-      const updatedNetwork: Network = {
-        ...selectedNetwork.value,
-        tokens: {
-          ...selectedNetwork.value.tokens,
-          [selectedAccount.value.address]: {
-            canton: {
-              ...currentCanton,
-              cc: {
-                activated: true,
-              },
-            },
-          },
-        },
-      };
-      selectedNetwork.value = updatedNetwork;
-
-      await saveNetwork(updatedNetwork);
-      await saveSelectedNetwork(updatedNetwork);
-
-      //send Amulet preapproval
-      await sendPreapproval(
-        "preapproval",
-        selectedAccount.value.cantonParty!,
-        selectedAccount.value.pk
-      );
-
-      //grant merge delegation (best effort, must not block token activation)
-      try {
-        await sendMergeDelegation(
-          selectedAccount.value.cantonParty!,
-          selectedAccount.value.pk
-        );
-      } catch (e) {
-        console.error("merge delegation failed", e);
-      }
+      // the stored selected account now carries the registered party
+      selectedAccount.value = updatedAccount;
     }
 
-    if (symbol === "CBTC") {
-      await sendPreapproval(
-        "preapproval2",
-        selectedAccount.value.cantonParty!,
-        selectedAccount.value.pk
-      );
-
-      const currentCanton =
-        selectedNetwork.value.tokens?.[selectedAccount.value.address]?.canton ??
-        {};
-
-      const updatedNetwork: Network = {
-        ...selectedNetwork.value,
-        tokens: {
-          ...selectedNetwork.value.tokens,
-          [selectedAccount.value.address]: {
-            canton: {
-              ...currentCanton,
-              cbtc: {
-                activated: true,
-              },
-            },
-          },
-        },
-      };
-
-      selectedNetwork.value = updatedNetwork;
-      await saveNetwork(updatedNetwork);
-      await saveSelectedNetwork(updatedNetwork);
-    }
-
-    if (symbol === "cETH") {
-      await sendPreapproval(
-        "preapproval3",
-        selectedAccount.value.cantonParty!,
-        selectedAccount.value.pk
-      );
-      const currentCanton =
-        selectedNetwork.value.tokens?.[selectedAccount.value.address]?.canton ??
-        {};
-      const updatedNetwork: Network = {
-        ...selectedNetwork.value,
-        tokens: {
-          ...selectedNetwork.value.tokens,
-          [selectedAccount.value.address]: {
-            canton: {
-              ...currentCanton,
-              ceth: {
-                activated: true,
-              },
-            },
-          },
-        },
-      };
-      selectedNetwork.value = updatedNetwork;
-      await saveNetwork(updatedNetwork);
-      await saveSelectedNetwork(updatedNetwork);
-    }
-    if (symbol === "USDCx") {
-      await sendPreapproval(
-        "preapproval4",
-        selectedAccount.value.cantonParty!,
-        selectedAccount.value.pk
-      );
-
-      const currentCanton =
-        selectedNetwork.value.tokens?.[selectedAccount.value.address]?.canton ??
-        {};
-      const updatedNetwork: Network = {
-        ...selectedNetwork.value,
-        tokens: {
-          ...selectedNetwork.value.tokens,
-          [selectedAccount.value.address]: {
-            canton: {
-              ...currentCanton,
-              usdcx: {
-                activated: true,
-              },
-            },
-          },
-        },
-      };
-      selectedNetwork.value = updatedNetwork;
-      await saveNetwork(updatedNetwork);
-      await saveSelectedNetwork(updatedNetwork);
-    }
-
-    if (symbol === "HANDL") {
-      await sendPreapproval(
-        "preapproval5",
-        selectedAccount.value.cantonParty!,
-        selectedAccount.value.pk
-      );
-
-      const currentCanton =
-        selectedNetwork.value.tokens?.[selectedAccount.value.address]?.canton ??
-        {};
-      const updatedNetwork: Network = {
-        ...selectedNetwork.value,
-        tokens: {
-          ...selectedNetwork.value.tokens,
-          [selectedAccount.value.address]: {
-            canton: {
-              ...currentCanton,
-              handl: {
-                activated: true,
-              },
-            },
-          },
-        },
-      };
-      selectedNetwork.value = updatedNetwork;
-      await saveNetwork(updatedNetwork);
-      await saveSelectedNetwork(updatedNetwork);
-    }
-
-    if (symbol === "BETH") {
-      await sendPreapproval(
-        "preapproval6",
-        selectedAccount.value.cantonParty!,
-        selectedAccount.value.pk
-      );
-      const currentCanton =
-        selectedNetwork.value.tokens?.[selectedAccount.value.address]?.canton ??
-        {};
-      const updatedNetwork: Network = {
-        ...selectedNetwork.value,
-        tokens: {
-          ...selectedNetwork.value.tokens,
-          [selectedAccount.value.address]: {
-            canton: {
-              ...currentCanton,
-              beth: {
-                activated: true,
-              },
-            },
-          },
-        },
-      };
-      selectedNetwork.value = updatedNetwork;
-      await saveNetwork(updatedNetwork);
-      await saveSelectedNetwork(updatedNetwork);
-    }
+    // CC: saves the flag, then Amulet preapproval + merge delegation (best effort).
+    // Other tokens: preapproval, then the flag. A 409 (already exists) is success.
+    await activateCantonToken({
+      network: selectedNetwork.value,
+      account: {
+        address: selectedAccount.value.address,
+        pk: selectedAccount.value.pk,
+        cantonParty: selectedAccount.value.cantonParty,
+      },
+      key,
+      onNetworkSaved: (network) => {
+        selectedNetwork.value = network;
+      },
+    });
     return;
   } catch (e) {
     console.error(e);

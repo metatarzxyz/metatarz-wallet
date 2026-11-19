@@ -138,7 +138,7 @@ type Proposal = {
   events: string[];
 };
 
-const APPROVAL_NEEDED = ["canton_prepareSignExecute", "canton_signMessage"];
+const APPROVAL_NEEDED = ["canton_prepareSignExecute", "canton_signMessage", "metatarz_swap"];
 
 const route = useRoute();
 const rid = (route?.params?.rid as string) ?? "";

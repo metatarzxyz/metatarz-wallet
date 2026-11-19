@@ -318,6 +318,8 @@ const CIP103_METHOD: Record<string, string> = {
     canton_status: 'status',
     canton_ledgerApi: 'ledgerApi',
     canton_signMessage: 'signMessage',
+    metatarz_swap: 'metatarz_swap',
+    metatarz_getTokenActivation: 'metatarz_getTokenActivation',
 }
 
 const handleSessionRequest = async (msg: any): Promise<WcResult> => {

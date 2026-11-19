@@ -97,6 +97,8 @@ export interface HistoryItem {
     chainId?: number
     webiste?: string
     txHash: string
+    // Short description, e.g. "Swap CC → USDCx"
+    label?: string
 }
 
 export interface ContractAction {

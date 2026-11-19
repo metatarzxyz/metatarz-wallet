@@ -122,6 +122,12 @@ onMounted(() => {
       });
       break;
     }
+    case "canton-swap": {
+      router.push({
+        path: `/canton-swap/${rid}/${param}/${website}`,
+      });
+      break;
+    }
     case "wc-proposal": {
       router.push({
         path: `/wc-proposal/${rid}/${param}/${website}`,

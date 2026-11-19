@@ -32,6 +32,10 @@ export const WC_CANTON_METHODS = [
     'canton_status',
     'canton_ledgerApi',
     'canton_signMessage',
+    // Metatarz extension: wallet-executed swap (see cip103.ts metatarz_swap)
+    'metatarz_swap',
+    // Metatarz extension: read-only, which swap assets the account can receive
+    'metatarz_getTokenActivation',
 ]
 
 export const WC_CANTON_EVENTS = ['accountsChanged', 'statusChanged', 'chainChanged']
