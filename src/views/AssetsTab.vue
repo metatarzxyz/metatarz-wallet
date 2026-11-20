@@ -216,7 +216,10 @@ const CANTON_ASSETS: CantonAssetConfig[] = [
     address: "0xDE40000000000000000000000000000000000001",
     symbol: "USDCx",
     name: "Canton USDC",
-    decimals: 6,
+    // The Metatarz JSON-RPC returns every Canton balance in 18-decimal wei,
+    // whatever the token's own precision (see balanceOf in the middleware).
+    decimals: 18,
+    logoFile: "canton-usdcx.webp",
     priceKey: "usd-coin",
     fixedPrice: 1,
   },
@@ -225,6 +228,7 @@ const CANTON_ASSETS: CantonAssetConfig[] = [
     symbol: "HANDL",
     name: "Handl",
     decimals: 18,
+    logoFile: "canton-handl.webp",
     priceKey: "handl",
   },
   {
