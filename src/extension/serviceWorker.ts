@@ -889,6 +889,8 @@ const mainListener = (message: RequestArguments, sender: chrome.runtime.MessageS
 
                         })
                         const requestChainId = network.chainId
+                        // Values the approval popup sent (gas settings, Canton venue fee).
+                        const approvedData = rIdData?.[String(gWin?.id ?? 0)] ?? {}
                         try {
                             const network = await getSelectedNetwork()
 
@@ -900,7 +902,8 @@ const mainListener = (message: RequestArguments, sender: chrome.runtime.MessageS
                                     throw new Error('Network changed while confirming the transaction')
                                 }
                                 //submit prepare, execute canton flow
-                                tx = await sendCantonTransaction({...params})
+                                // Never sign a transfer with a higher venue fee than the one approved.
+                                tx = await sendCantonTransaction({ ...params, maxFee: approvedData?.cantonMaxFee ?? '0' })
 
                             }else{
                             tx = await sendTransaction({ ...params, ...(rIdData?.[String(gWin?.id ?? 0)] ?? {}) })

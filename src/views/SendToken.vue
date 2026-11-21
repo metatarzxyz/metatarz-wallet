@@ -570,7 +570,8 @@ const promptTransactionERC20 = async () => {
     alertMsg.value = "Invalid token address or balance";
   }
 
-  if (Number(amount.value) >= Number(balance)) {
+  // Compare the token amount being sent (not the CC amount field) with the token balance.
+  if (balance !== null && Number(erc20Amount.value) > Number(balance)) {
     alertOpen.value = true;
     alertMsg.value = "Insufficient balance";
     return;

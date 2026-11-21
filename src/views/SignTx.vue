@@ -86,6 +86,19 @@
             >
           </ion-label>
         </ion-item>
+        <ion-item v-if="cantonToken">
+          <ion-label class="ion-text-wrap">
+            Transfer fee:
+            <b v-if="cantonFee !== null">{{ cantonFee > 0n ? formatCantonUnits(cantonFee) + " " + (cantonToken?.symbol ?? "") : "None" }}</b>
+            <span v-else-if="cantonFeeError" style="opacity: 0.7">unavailable ({{ cantonFeeError }})</span>
+            <span v-else style="opacity: 0.7">shown after unlocking</span>
+          </ion-label>
+        </ion-item>
+        <ion-item v-if="cantonFee !== null && cantonFee > 0n && cantonAmountWei !== null">
+          <ion-label class="ion-text-wrap">
+            Total: <b>{{ formatCantonUnits(cantonAmountWei + cantonFee) }} {{ cantonToken?.symbol ?? "" }}</b>
+          </ion-label>
+        </ion-item>
         <ion-item>
           <ion-label class="ion-text-wrap">Recipient: <b>{{ contract }}</b></ion-label>
         </ion-item>
@@ -271,7 +284,7 @@ import UnlockModal from "@/views/UnlockModal.vue";
 import router from "@/router";
 import { setUnlockModalState } from "@/utils/unlockStore";
 import AssetChanges from "./sub-views/AssetChanges.vue";
-import { CANTON_TRANSFER_DECIMALS, getCantonTransferToken, isCantonChain } from "@/utils/canton";
+import { CANTON_TRANSFER_DECIMALS, getCantonTransferToken, isCantonChain, quoteCantonTransferFee } from "@/utils/canton";
 import type { AlchemyAssetChange } from "@/extension/types";
 import { getAlchemyEndpointFromChainId, simulateTx } from "@/utils/alchemy";
 
@@ -312,14 +325,55 @@ const cantonToken = ref(undefined) as Ref<ReturnType<typeof getCantonTransferTok
 const cantonTokenPrice = ref(0);
 let cantonAmountNum: number | null = null;
 let cantonAmount = "";
+let cantonAmountWei: bigint | null = null;
 try {
   const raw = BigInt(params?.value ?? 0);
   if (raw < 0n) throw new Error("negative");
   cantonAmount = ethers.formatUnits(raw, CANTON_TRANSFER_DECIMALS);
   cantonAmountNum = Number(cantonAmount);
+  cantonAmountWei = raw;
 } catch {
   cantonAmount = `invalid amount (${String(params?.value)})`;
 }
+
+// Canton venue transfer fee (wei of the transferred token). null until quoted;
+// the quote needs the unlocked account key. The approved fee is sent to the
+// service worker, which refuses to sign a transfer charging more.
+const cantonFee = ref(null as bigint | null);
+const cantonFeeError = ref("");
+const formatCantonUnits = (wei: bigint) => ethers.formatUnits(wei, CANTON_TRANSFER_DECIMALS);
+
+const loadCantonFee = async () => {
+  if (!isCanton.value || !cantonToken.value || cantonAmountWei === null) {
+    return;
+  }
+  try {
+    const quote = await quoteCantonTransferFee(params, selectedNetwork.value);
+    cantonFee.value = quote.fee;
+    cantonFeeError.value = "";
+    await walletSendData(rid, { cantonMaxFee: quote.fee.toString() });
+  } catch (err) {
+    cantonFee.value = null;
+    cantonFeeError.value = String((err as Error)?.message ?? err);
+  }
+};
+
+/**
+ * Makes sure the user saw the fee before approving. Returns false when a fee
+ * was only now quoted (wallet was locked): it is shown and Send must be pressed again.
+ */
+const cantonFeeShown = async (): Promise<boolean> => {
+  if (!isCanton.value || cantonFee.value !== null) {
+    return true;
+  }
+  await loadCantonFee();
+  if (cantonFee.value !== null && cantonFee.value > 0n) {
+    alertMsg.value = `A transfer fee of ${formatCantonUnits(cantonFee.value)} ${cantonToken.value?.symbol ?? ""} applies. Review it and press Send again.`;
+    alertOpen.value = true;
+    return false;
+  }
+  return true;
+};
 
 // asset changes
 const isAssetChangesEnabled = ref(false);
@@ -400,6 +454,9 @@ const onSign = async () => {
   if ((selectedAccount.pk ?? "").length !== 66) {
     const modalResult = await openModal();
     if (modalResult) {
+      if (!(await cantonFeeShown())) {
+        return;
+      }
       await unBlockLockout(true);
       loading.value = true;
       approve(rid);
@@ -407,6 +464,9 @@ const onSign = async () => {
       onCancel();
     }
   } else {
+    if (!(await cantonFeeShown())) {
+      return;
+    }
     await unBlockLockout(true);
     approve(rid);
   }
@@ -488,6 +548,10 @@ onIonViewWillEnter(async () => {
   intialSelectedAccount.value = data[1];
   isCanton.value = isCantonChain(selectedNetwork.value?.chainId);
   cantonToken.value = getCantonTransferToken(selectedNetwork.value?.chainId, params?.token);
+  // Quote the venue fee now if the account is unlocked (otherwise after unlocking).
+  if (isCanton.value && (intialSelectedAccount.value?.pk ?? "").length === 66) {
+    loadCantonFee();
+  }
   userBalance.value = Number(ethers.formatEther((await pBalance).toString() ?? "0x0"));
   const { feed, price } = await pGasPrice;
   gasFeed = feed;
@@ -512,7 +576,12 @@ onIonViewWillEnter(async () => {
   inGasPrice.value = gasPrice.value;
   inGasLimit.value = gasLimit.value;
 
-  if (userBalance.value < totalCost.value) {
+  // Canton has no gas, and userBalance is the CC balance: only CC transfers can
+  // be checked here (the middleware checks token balances at prepare).
+  if (!isCanton.value && userBalance.value < totalCost.value) {
+    insufficientBalance.value = true;
+  }
+  if (isCanton.value && params?.token === "Amulet" && cantonAmountNum !== null && userBalance.value < cantonAmountNum) {
     insufficientBalance.value = true;
   }
   const prices = await pGetPrices;

@@ -149,6 +149,15 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
     }
     if (prepareResponse && prepareResponse?.transaction_hash) {
 
+        // Venue fee: never sign a transfer charging more than the fee the user
+        // approved (params.maxFee, wei; quoted in the approval popup).
+        if (type === 'transfer') {
+            const fee = BigInt(prepareResponse?.fee ?? 0)
+            const maxFee = BigInt(params?.maxFee ?? 0)
+            if (fee > maxFee) {
+                throw new Error('The transfer fee changed since you approved it. Please try again.')
+            }
+        }
 
         const txHash = prepareResponse?.transaction_hash
 
@@ -182,6 +191,40 @@ export const sendCantonTransaction = async (params: any, type = "transfer", part
 
 }
 
+
+export type CantonTransferFee = { fee: bigint, feeReceiver?: string }
+
+/**
+ * Quotes the venue fee of a Canton transfer (POST /api/v2/transfer/fee) for the
+ * selected account, without preparing it. `params` are the transfer params
+ * ({ to, value, token }). Fee is in wei of the transferred token (0n = free).
+ * Middlewares without venue transfers answer 404: treated as no fee.
+ */
+export const quoteCantonTransferFee = async (params: any, cantonNetwork?: Network): Promise<CantonTransferFee> => {
+    const account = await getSelectedAccount()
+    const { network } = cantonNetwork
+        ? { network: cantonNetwork }
+        : await getCurrentProvider()
+    const message = timedMessage("transfer")
+    const sig = await signMsgWithPk(message, account?.pk)
+    const response = await fetch(network.rpc + '/api/v2/transfer/fee', {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Signature": sig,
+            "X-Message": message
+        },
+        body: JSON.stringify({ to: params?.to, amount: String(BigInt(params?.value ?? 0)), token: params?.token }),
+    })
+    if (response.status === 404) {
+        return { fee: 0n }
+    }
+    const res = await readMiddlewareResponse(response)
+    if (res?.code) {
+        throw new Error(cantonErrorMessage(res))
+    }
+    return { fee: BigInt(res?.fee ?? 0), feeReceiver: res?.fee_receiver || undefined }
+}
 
 // call register + preapprove (prepare + execute) endpoints
 
